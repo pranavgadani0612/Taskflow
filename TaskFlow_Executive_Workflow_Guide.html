@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TaskFlow ERP — Executive & Project Management Workflow Architecture Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  @page {
+    size: A4;
+    margin: 14mm 14mm 16mm 14mm;
+    @bottom-right {
+      content: "Page " counter(page);
+      font-size: 9pt;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      color: #64748b;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1e293b;
+    background-color: #ffffff;
+    line-height: 1.55;
+    font-size: 10pt;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Page Break Utilities */
+  .page-break {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Cover Page */
+  .cover-container {
+    height: 100%;
+    min-height: 250mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 30px 20px 20px 20px;
+    border-left: 6px solid #2563eb;
+    background: linear-gradient(135deg, #f8fafc 0%, #ffffff 50%, #eff6ff 100%);
+  }
+
+  .cover-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #1e293b;
+    color: #38bdf8;
+    font-size: 9pt;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    width: fit-content;
+  }
+
+  .cover-title {
+    font-size: 32pt;
+    font-weight: 800;
+    line-height: 1.15;
+    color: #0f172a;
+    margin: 20px 0 12px 0;
+  }
+
+  .cover-title span {
+    color: #2563eb;
+  }
+
+  .cover-subtitle {
+    font-size: 14pt;
+    font-weight: 500;
+    color: #475569;
+    max-width: 600px;
+    line-height: 1.4;
+  }
+
+  .cover-meta {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 18px 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  .meta-item h4 {
+    margin: 0 0 4px 0;
+    font-size: 8pt;
+    text-transform: uppercase;
+    color: #64748b;
+    letter-spacing: 0.5px;
+  }
+
+  .meta-item p {
+    margin: 0;
+    font-size: 11pt;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  /* Document Typography */
+  h1 {
+    font-size: 20pt;
+    font-weight: 800;
+    color: #0f172a;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 8px;
+    margin-top: 24px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  h2 {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #1e3a8a;
+    margin-top: 18px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  h3 {
+    font-size: 11.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin-top: 14px;
+    margin-bottom: 6px;
+  }
+
+  p {
+    margin: 0 0 10px 0;
+    color: #334155;
+  }
+
+  /* Executive Highlight Cards */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 16px 0;
+  }
+
+  .kpi-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px 14px;
+    border-top: 4px solid #2563eb;
+  }
+
+  .kpi-card.green { border-top-color: #059669; }
+  .kpi-card.purple { border-top-color: #7c3aed; }
+  .kpi-card.amber { border-top-color: #d97706; }
+
+  .kpi-number {
+    font-size: 18pt;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1;
+    margin: 4px 0 2px 0;
+  }
+
+  .kpi-label {
+    font-size: 8pt;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 16px 0;
+    font-size: 9pt;
+  }
+
+  th, td {
+    padding: 8px 10px;
+    text-align: left;
+    border: 1px solid #e2e8f0;
+    vertical-align: top;
+  }
+
+  th {
+    background-color: #0f172a;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 8.5pt;
+    letter-spacing: 0.3px;
+  }
+
+  tr:nth-child(even) td {
+    background-color: #f8fafc;
+  }
+
+  /* Flow Diagram Visual Blocks */
+  .flow-track {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 14px 0;
+  }
+
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 10px 14px;
+    position: relative;
+  }
+
+  .flow-num {
+    background: #2563eb;
+    color: white;
+    font-weight: 800;
+    font-size: 10pt;
+    min-width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    margin-top: 2px;
+  }
+
+  .flow-content h4 {
+    margin: 0 0 3px 0;
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .flow-content p {
+    margin: 0;
+    font-size: 8.8pt;
+    color: #475569;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    font-size: 7.5pt;
+    font-weight: 700;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+
+  .badge-blue { background: #dbeafe; color: #1e40af; }
+  .badge-green { background: #dcfce7; color: #166534; }
+  .badge-amber { background: #fef3c7; color: #92400e; }
+  .badge-purple { background: #f3e8ff; color: #6b21a8; }
+  .badge-red { background: #fee2e2; color: #991b1b; }
+
+  /* Callout Boxes */
+  .callout {
+    background: #eff6ff;
+    border-left: 4px solid #3b82f6;
+    padding: 10px 14px;
+    border-radius: 0 8px 8px 0;
+    margin: 12px 0;
+    font-size: 9pt;
+  }
+
+  .callout strong {
+    color: #1e40af;
+  }
+
+  .callout-amber {
+    background: #fffbeb;
+    border-left-color: #f59e0b;
+  }
+  .callout-amber strong {
+    color: #b45309;
+  }
+
+  .module-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  }
+
+  .module-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 4px;
+  }
+
+  .module-title {
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .module-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    font-size: 8.5pt;
+  }
+
+  .module-detail-box {
+    background: #f8fafc;
+    padding: 6px 8px;
+    border-radius: 6px;
+  }
+
+  .module-detail-box strong {
+    color: #475569;
+    font-size: 7.8pt;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 2px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= COVER PAGE ================= -->
+<div class="cover-container page-break">
+  <div>
+    <div class="cover-badge">⚡ Enterprise Operations Blueprint</div>
+    <div class="cover-title">TaskFlow <span>ERP</span></div>
+    <div class="cover-subtitle">Complete Architecture, Operations & Delivery Workflow Guide for Executive Leadership and Project Managers</div>
+  </div>
+
+  <div>
+    <div style="margin: 30px 0; display: flex; gap: 10px;">
+      <span class="badge badge-blue" style="font-size: 9pt; padding: 6px 12px;">React 19 + Node.js Express</span>
+      <span class="badge badge-green" style="font-size: 9pt; padding: 6px 12px;">MySQL 24 Relational Tables</span>
+      <span class="badge badge-purple" style="font-size: 9pt; padding: 6px 12px;">IST Automated Engine</span>
+      <span class="badge badge-amber" style="font-size: 9pt; padding: 6px 12px;">Dynamic RBAC Security</span>
+    </div>
+
+    <div class="cover-meta">
+      <div class="meta-item">
+        <h4>Target Audience</h4>
+        <p>Chief Executive Officer (CEO) & Project Managers (PM)</p>
+      </div>
+      <div class="meta-item">
+        <h4>Version & Release</h4>
+        <p>v2.4 Enterprise Production</p>
+      </div>
+      <div class="meta-item">
+        <h4>Primary Objective</h4>
+        <p>Operational Transparency, Resource Utilization & Cost Governance</p>
+      </div>
+      <div class="meta-item">
+        <h4>Core Modules</h4>
+        <p>18 Integrated Production Engines</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="font-size: 8pt; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 10px; display: flex; justify-content: space-between;">
+    <span>Confidential — Internal Organizational Architecture Document</span>
+    <span>TaskFlow Operations Division</span>
+  </div>
+</div>
+
+<!-- ================= SECTION 1: EXECUTIVE SUMMARY & RACI ================= -->
+<div class="page-break">
+  <h1>1. Executive Summary & Value Proposition</h1>
+  
+  <p><strong>TaskFlow ERP</strong> is an all-in-one digital operations platform specifically engineered for software consulting and high-growth technology firms. It eliminates operational friction by uniting project delivery, shift compliance, quality assurance, and financial reconciliations into a single, real-time command center.</p>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Modules Integrated</div>
+      <div class="kpi-number">18</div>
+      <span class="badge badge-blue">Zero Silos</span>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-label">Billing Leakage</div>
+      <div class="kpi-number">0%</div>
+      <span class="badge badge-green">Audit Verified</span>
+    </div>
+    <div class="kpi-card purple">
+      <div class="kpi-label">Payroll Generation</div>
+      <div class="kpi-number">1-Click</div>
+      <span class="badge badge-purple">Auto-Computed</span>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-label">Timezone Sync</div>
+      <div class="kpi-number">IST</div>
+      <span class="badge badge-amber">Asia/Kolkata</span>
+    </div>
+  </div>
+
+  <h2>Stakeholder RACI Matrix (Roles & Responsibility Scope)</h2>
+  <p>Every feature and data endpoint in TaskFlow is strictly gated through dynamic Role-Based Access Control (RBAC):</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 22%;">Role</th>
+        <th style="width: 38%;">Core Responsibilities</th>
+        <th style="width: 25%;">System Scope</th>
+        <th style="width: 15%;">Primary Impact</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>CEO / Super Admin</strong></td>
+        <td>Company strategy, shifts & holiday calendar, financial approvals, invoice auditing, payroll dispatch, organizational oversight.</td>
+        <td>100% Read & Write across all 24 database entities.</td>
+        <td><span class="badge badge-purple">Profit & Governance</span></td>
+      </tr>
+      <tr>
+        <td><strong>Project Manager</strong></td>
+        <td>Client onboarding, project scoping, milestone planning, task & subtask delegation, timesheet approvals, QA defect triage.</td>
+        <td>Assigned projects, team members, timesheets & sprints.</td>
+        <td><span class="badge badge-blue">On-Time Delivery</span></td>
+      </tr>
+      <tr>
+        <td><strong>Developer / Staff</strong></td>
+        <td>Shift clock-in/out, daily task execution, timesheet hour logging, break compliance, leave & expense reimbursement filing.</td>
+        <td>Personal portal, self-service timesheets & tasks.</td>
+        <td><span class="badge badge-green">Productive Output</span></td>
+      </tr>
+      <tr>
+        <td><strong>QA Engineer</strong></td>
+        <td>Test cases creation, executing test runs, logging defect tickets with reproduction steps, verifying bug fixes.</td>
+        <td>Project testing suites, bug reports & quality gates.</td>
+        <td><span class="badge badge-amber">Defect Elimination</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Key Takeaway for CEO:</strong> You possess real-time visibility into project profitability, employee attendance punctuality, and client billing rates without having to request manual Excel reports from managers.
+  </div>
+  <div class="callout callout-amber">
+    <strong>Key Takeaway for Project Managers:</strong> You can assign tasks with or without immediate team allocation, verify whether timesheets match actual attendance hours, and guarantee high code quality prior to client deployment.
+  </div>
+</div>
+
+<!-- ================= SECTION: GRANULAR RBAC ACTION MATRIX ================= -->
+<div class="page-break">
+  <h1>2. Granular RBAC Permission & Action Matrix</h1>
+  <p>TaskFlow enforces strict dynamic permission checking across 4 distinct operational vectors for all 18 modules: <strong>Read (Navigation/View)</strong>, <strong>Create (+ Add Button)</strong>, <strong>Update (Edit & Lifecycle Actions)</strong>, and <strong>Delete</strong>.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 28%;">Module / System Function</th>
+        <th style="width: 18%; text-align: center;">CEO / Super Admin</th>
+        <th style="width: 18%; text-align: center;">Project Manager</th>
+        <th style="width: 18%; text-align: center;">Developer / Staff</th>
+        <th style="width: 18%; text-align: center;">QA Engineer</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Project Management</strong> (<code>project_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (C,R,U,D)</span></td>
+        <td style="text-align: center;"><span class="badge badge-blue">C, R, U</span></td>
+        <td style="text-align: center;"><span class="badge badge-amber">Read (Assigned)</span></td>
+        <td style="text-align: center;"><span class="badge badge-amber">Read (Assigned)</span></td>
+      </tr>
+      <tr>
+        <td><strong>Task & Subtasks</strong> (<code>task_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (C,R,U,D)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (C,R,U,D)</span></td>
+        <td style="text-align: center;"><span class="badge badge-blue">R, U (Status)</span></td>
+        <td style="text-align: center;"><span class="badge badge-blue">Read Only</span></td>
+      </tr>
+      <tr>
+        <td><strong>Timesheet Management</strong> (<code>timesheet_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (Audit)</span></td>
+        <td style="text-align: center;"><span class="badge badge-blue">R, U (Approve)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">C, R (Own Log)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">C, R (Own Log)</span></td>
+      </tr>
+      <tr>
+        <td><strong>QA & Bug Tracking</strong> (<code>qa_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (C,R,U,D)</span></td>
+        <td style="text-align: center;"><span class="badge badge-blue">R, U (Review)</span></td>
+        <td style="text-align: center;"><span class="badge badge-amber">R (Fix Bugs)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (C,R,U,D)</span></td>
+      </tr>
+      <tr>
+        <td><strong>Client Accounts & Invoicing</strong> (<code>client_reports</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (C,R,U,D)</span></td>
+        <td style="text-align: center;"><span class="badge badge-blue">R, C (Invoices)</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+      </tr>
+      <tr>
+        <td><strong>Payroll & Salary Runs</strong> (<code>payroll_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (C,R,U,D)</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+      </tr>
+      <tr>
+        <td><strong>Resource Utilization</strong> (<code>resource_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (C,R,U,D)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (Allocate)</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+      </tr>
+      <tr>
+        <td><strong>IT Asset Inventory</strong> (<code>asset_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (C,R,U,D)</span></td>
+        <td style="text-align: center;"><span class="badge badge-amber">R (Team Assets)</span></td>
+        <td style="text-align: center;"><span class="badge badge-amber">R (Own Asset)</span></td>
+        <td style="text-align: center;"><span class="badge badge-amber">R (Own Asset)</span></td>
+      </tr>
+      <tr>
+        <td><strong>Attendance & Shift Punch</strong> (<code>attendance_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (Configure)</span></td>
+        <td style="text-align: center;"><span class="badge badge-blue">R, U (Review)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">C, R (Self Punch)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">C, R (Self Punch)</span></td>
+      </tr>
+      <tr>
+        <td><strong>Leave Requests</strong> (<code>leave_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (Policy)</span></td>
+        <td style="text-align: center;"><span class="badge badge-blue">R, U (Approve)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">C, R (Apply)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">C, R (Apply)</span></td>
+      </tr>
+      <tr>
+        <td><strong>Expense Claims</strong> (<code>expense_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (Disburse)</span></td>
+        <td style="text-align: center;"><span class="badge badge-blue">R, U (Approve)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">C, R (Claim)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">C, R (Claim)</span></td>
+      </tr>
+      <tr>
+        <td><strong>Roles & System Permissions</strong> (<code>role_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (Full Setup)</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+      </tr>
+      <tr>
+        <td><strong>Staff & User Directory</strong> (<code>staff_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (C,R,U,D)</span></td>
+        <td style="text-align: center;"><span class="badge badge-blue">Read Only</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+        <td style="text-align: center;"><span class="badge badge-red">🚫 Hidden</span></td>
+      </tr>
+      <tr>
+        <td><strong>Team Chat & Notice Board</strong> (<code>chat_management</code>)</td>
+        <td style="text-align: center;"><span class="badge badge-green">ALL (Broadcast)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">Active (Chat/Post)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">Active (Chat/Read)</span></td>
+        <td style="text-align: center;"><span class="badge badge-green">Active (Chat/Read)</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Zero Data Leakage Guarantee:</strong> When a user lacks <code>read</code> permission for any module, it is automatically purged from the Navigation Sidebar and blocked at the React Router layer. Sensitive administrative actions like adding roles, editing salary structures, or viewing client billings are impossible for non-authorized personnel.
+  </div>
+</div>
+
+<!-- ================= SECTION 2: END-TO-END BUSINESS FLOWS ================= -->
+<div class="page-break">
+  <h1>2. Core Business Workflows</h1>
+
+  <h2>A. Project Delivery & Execution Lifecycle</h2>
+  <p>How a project transitions from client contract to completion and billing:</p>
+
+  <div class="flow-track">
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div class="flow-content">
+        <h4>Client & Project Creation (CEO / PM)</h4>
+        <p>A client profile is created with currency and billing terms. A project is initiated (Name, Description, Target Deadlines). <em>Note: Assigning team members is optional at inception.</em></p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">2</div>
+      <div class="flow-content">
+        <h4>Work Breakdown Structure (PM)</h4>
+        <p>Project roadmap is decomposed into granular <strong>Tasks</strong> and <strong>Subtasks</strong> with assigned priorities (Critical, High, Medium, Low), estimated hours, and assigned engineers.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">3</div>
+      <div class="flow-content">
+        <h4>Task Execution & Live Updates (Developers)</h4>
+        <p>Engineers move task states (<code>Pending</code> ➔ <code>In Progress</code> ➔ <code>Ready for QA</code>) and link their Git branches/commits.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">4</div>
+      <div class="flow-content">
+        <h4>Daily Timesheet Filing & Verification (Developer ➔ PM)</h4>
+        <p>Engineers record hours spent on tasks tagged as <strong>Billable</strong> or <strong>Non-billable</strong>. PM verifies submitted hours against daily punch duration and clicks <strong>Approve</strong>.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">5</div>
+      <div class="flow-content">
+        <h4>Quality Assurance & Bug Regression (QA Engineer)</h4>
+        <p>QA runs test cases. If a defect occurs, a <strong>Bug Ticket</strong> is filed and reassigned to developer. Once resolved, QA marks it <code>Verified Complete</code>.</p>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-num">6</div>
+      <div class="flow-content">
+        <h4>Invoicing & Financial Realization (CEO / Accounts)</h4>
+        <p>Approved billable hours are compiled with 1-click into branded PDF invoices and sent to the client. Realized revenue is tracked on the CEO dashboard.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= SECTION 3: WORKFORCE & SHIFT COMPLIANCE ================= -->
+<div class="page-break">
+  <h1>3. Workforce Governance & Shift Architecture</h1>
+  
+  <p>TaskFlow features an automated IST (Asia/Kolkata) attendance engine that enforces workplace discipline, eliminates manual timekeeping, and automatically feeds into the monthly payroll module.</p>
+
+  <h2>Automated Shift Timeline & Penalty Rules</h2>
+  
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 20%;">Time Window (IST)</th>
+        <th style="width: 25%;">Event / Trigger</th>
+        <th style="width: 35%;">System Action & Compliance Rule</th>
+        <th style="width: 20%;">Attendance Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>09:30 AM – 10:00 AM</strong></td>
+        <td>Early Arrival Window</td>
+        <td>Clock-in allowed up to 30 mins before official shift start. Employee selects <em>Office</em> or <em>WFH</em>.</td>
+        <td><span class="badge badge-green">On Time</span></td>
+      </tr>
+      <tr>
+        <td><strong>10:00 AM – 10:30 AM</strong></td>
+        <td>Official Grace Period</td>
+        <td>Standard 30-minute grace window for daily commuting variations.</td>
+        <td><span class="badge badge-green">Present (Grace)</span></td>
+      </tr>
+      <tr>
+        <td><strong>10:31 AM – 12:00 PM</strong></td>
+        <td>Late Arrival</td>
+        <td>Registers a <strong>Late Instance</strong>. Up to 3 late instances allowed per month. Exceeding 3 instances automatically deducts a First Half Day.</td>
+        <td><span class="badge badge-amber">Late Flag</span></td>
+      </tr>
+      <tr>
+        <td><strong>After 12:00 PM</strong></td>
+        <td>Excessive Delay</td>
+        <td>Automatic conversion to <strong>Half-Day</strong> presence regardless of past late quota.</td>
+        <td><span class="badge badge-red">Half Day</span></td>
+      </tr>
+      <tr>
+        <td><strong>During Shift</strong></td>
+        <td>Break Governance</td>
+        <td>Lunch Break (40m) & Tea Break (20m). Timed with live stopwatch on dashboard. Overages flagged as Excess Breaks.</td>
+        <td><span class="badge badge-blue">Monitored</span></td>
+      </tr>
+      <tr>
+        <td><strong>19:00 PM Onwards</strong></td>
+        <td>Shift Completion</td>
+        <td>Employee clocks out. System verifies net hours worked (Total elapsed minus excess breaks).</td>
+        <td><span class="badge badge-green">Completed</span></td>
+      </tr>
+      <tr>
+        <td><strong>11:00 PM Auto-Lock</strong></td>
+        <td>Forgotten Punch Out</td>
+        <td>Shift auto-terminated. Employee cannot clock in next morning without submitting a <strong>Second Half Regularization Leave</strong>.</td>
+        <td><span class="badge badge-red">Auto-Closed</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Leave Management & Quota Structure</h2>
+  <p>Employees are allocated fixed yearly allowances. Every leave follows an automated approval chain:</p>
+  <ul>
+    <li><strong>Casual Leave (CL - 12 Days):</strong> Planned personal time off. Requires prior PM approval.</li>
+    <li><strong>Sick Leave (SL - 8 Days):</strong> Health emergencies; medical certificates attachable.</li>
+    <li><strong>Paid Leave (PL - 15 Days):</strong> Earned leave accumulated across project service.</li>
+    <li><strong>Short Leave (2 Hours):</strong> Allows stepping away for urgent matters without forfeiting half-day pay.</li>
+  </ul>
+</div>
+
+<!-- ================= SECTION 4: ALL 18 PRODUCTION MODULES ================= -->
+<div class="page-break">
+  <h1>4. Comprehensive 18-Module Functional Breakdown</h1>
+  <p>An executive overview of all 18 modules, detailing user inputs, internal logic, and business deliverables:</p>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">1. 🔐 Dynamic RBAC & Authentication</span>
+      <span class="badge badge-blue">Security</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Bcrypt hashed credentials, JWT bearer tokens, dynamic permission toggle table.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Guarantees sensitive revenue, salary, and client data is strictly shielded from unauthorized staff.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">2. ⏰ Attendance & Shift Management</span>
+      <span class="badge badge-green">Operations</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Web punch-in, IP / WFH location check, IST timestamping, late count aggregator.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Automated punctuality enforcement, elimination of "buddy punching", instant export of monthly times.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">3. ☕ Break & Productivity Compliance</span>
+      <span class="badge badge-amber">Productivity</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Lunch timer (40 min cap), Tea timer (20 min cap), simultaneous break locks.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Prevents unaccounted team downtime during active project sprints.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">4. 📁 Project Management & Milestones</span>
+      <span class="badge badge-purple">Delivery</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Client assignment, milestone schedules, hourly budgets, status flags (Active, Hold, Done).
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        High-level visibility into project burn rate, delivery milestones, and deadline tracking.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">5. 📋 Task & Subtask Delegation Engine</span>
+      <span class="badge badge-blue">Execution</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Kanban/List view, Priority (Critical to Low), due dates, estimated hours, subtask checklists.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Granular delegation of work packages with real-time sprint status tracking.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">6. ⏱️ Timesheet & Billing Reconciliations</span>
+      <span class="badge badge-green">Finance</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Daily task hour logging, billable vs non-billable tagging, PM approval trigger.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Ensures 100% of billable client engineering hours are audited, approved, and billed without loss.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= SECTION 5: MODULES 7-18 CONTINUATION ================= -->
+<div class="page-break">
+  <h1>4. Comprehensive 18-Module Breakdown (Contd.)</h1>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">7. 🏖️ Leave Management & Approval Chains</span>
+      <span class="badge badge-blue">HR Operations</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        CL, SL, PL, Comp-off balances; Full, Half, or Short leave request options.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Eliminates unapproved absenteeism; auto-deducts unpaid leave from monthly payroll.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">8. 💰 Expense Management & Reimbursements</span>
+      <span class="badge badge-amber">Accounting</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Expense category (Travel, Client, SaaS), bill receipt uploads, multi-stage approval.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Tight policy compliance on corporate expenditure with transparent audit trails.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">9. 🧪 QA Test Case & Bug Tracking Engine</span>
+      <span class="badge badge-red">Quality</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Test case suites, execution logs (Pass/Fail), bug severity, reproduction steps.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Directly measures software stability and prevents untested code from reaching clients.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">10. 🏢 Client Accounts & Automated Invoicing</span>
+      <span class="badge badge-green">Revenue</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Client directory, agreed billing rates, project linkages, tax calculation.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        1-Click generation of professional client invoices populated from approved timesheets.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">11. 💵 Automated Payroll & Salary Dispatches</span>
+      <span class="badge badge-purple">Compensation</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        CTC, Basic, HRA, Allowances, PF, Professional Tax, Unpaid leave deductions.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Zero-error monthly payroll generation and automated payslip PDF distribution.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">12. 💻 IT Hardware & Software Asset Registry</span>
+      <span class="badge badge-blue">Asset Management</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Serial numbers, asset tags, laptop specifications, allocation history, return checklist.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Guarantees accountability for company laptops, monitors, and cloud license seats.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">13. 📢 Notice Board & Mandatory Acknowledgments</span>
+      <span class="badge badge-amber">Corporate HR</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Broadcast announcements, priority pinning, mandatory "Read & Acknowledge" button.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Proof of policy communication for HR compliance and team-wide memos.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">14. 🗓️ Official Company Holiday Calendar</span>
+      <span class="badge badge-green">Calendar</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Annual gazetted, state, and optional holiday scheduling.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Auto-exempts employees on official holidays to preserve accurate attendance scores.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">15. 💬 Real-Time Team Chat & Collaboration</span>
+      <span class="badge badge-blue">Internal Comms</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Sub-millisecond Socket.io engine, direct 1-on-1 chats, project team channels, files.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Keeps project conversations centralized inside TaskFlow without third-party tools.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">16. 🎫 IT Helpdesk & Infrastructure Tickets</span>
+      <span class="badge badge-purple">Support</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Hardware issue tickets, VPN/credential requests, priority queue, resolution status.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Minimizes development downtime caused by infrastructure or workstation failures.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">17. 🏠 Work From Home (WFH) Governance</span>
+      <span class="badge badge-green">Remote Work</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Remote request submissions, manager approval workflow, punch widget remote toggle.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Disciplined remote work framework with full manager approval control.
+      </div>
+    </div>
+  </div>
+
+  <div class="module-card">
+    <div class="module-header">
+      <span class="module-title">18. 📈 Performance Appraisals & Star Ratings</span>
+      <span class="badge badge-amber">Talent & Growth</span>
+    </div>
+    <div class="module-grid">
+      <div class="module-detail-box">
+        <strong>Inputs & Controls</strong>
+        Structured 1-5 star ratings across delivery, code quality, communication, and ownership.
+      </div>
+      <div class="module-detail-box">
+        <strong>CEO & PM Deliverable</strong>
+        Data-driven appraisal history to reward top performers and identify training needs.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= SECTION 6: EXECUTIVE KPI DASHBOARDS ================= -->
+<div class="page-break">
+  <h1>5. Executive Dashboards & Decision Metrics</h1>
+  
+  <p>TaskFlow transforms raw database entries into actionable intelligence for executive management:</p>
+
+  <h2>For the Chief Executive Officer (CEO)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 28%;">Executive Metric</th>
+        <th style="width: 42%;">Source Module</th>
+        <th style="width: 30%;">Strategic Business Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Organization Billable Ratio</strong></td>
+        <td>Timesheets & Project Budgets</td>
+        <td>Measure engineering utilization against total payroll cost.</td>
+      </tr>
+      <tr>
+        <td><strong>Outstanding Invoices & Aging</strong></td>
+        <td>Client Accounts & Invoicing</td>
+        <td>Optimize accounts receivable and cash flow cycles.</td>
+      </tr>
+      <tr>
+        <td><strong>Monthly Payroll Liabilities</strong></td>
+        <td>Payroll & Statutory Deductions (PF/PT/TDS)</td>
+        <td>Audit monthly salary overheads vs corporate revenue.</td>
+      </tr>
+      <tr>
+        <td><strong>Attendance & Retention Trends</strong></td>
+        <td>Attendance, Leaves & Appraisals</td>
+        <td>Identify workforce stability, burn-out patterns, or chronic tardiness.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>For the Project Manager (PM)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 28%;">Operational Metric</th>
+        <th style="width: 42%;">Source Module</th>
+        <th style="width: 30%;">Tactical Delivery Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Sprint Task Velocity & Burndown</strong></td>
+        <td>Tasks & Subtask Delegation</td>
+        <td>Ensure critical roadmap milestones remain on schedule.</td>
+      </tr>
+      <tr>
+        <td><strong>Timesheet Compliance Rate</strong></td>
+        <td>Timesheet Approvals</td>
+        <td>Prevent delayed billing by ensuring daily submission by 19:30 IST.</td>
+      </tr>
+      <tr>
+        <td><strong>Defect Leakage & Bug Severity</strong></td>
+        <td>QA Test Cases & Bug Reports</td>
+        <td>Halt releases if Critical/Major defects remain unresolved.</td>
+      </tr>
+      <tr>
+        <td><strong>Team Capacity & Planned Leaves</strong></td>
+        <td>Leave Management & WFH Requests</td>
+        <td>Forecast sprint capacity accurately before committing client deliverables.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="margin-top: 35px; border-top: 2px solid #e2e8f0; padding-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <h3 style="margin: 0; color: #0f172a;">TaskFlow ERP Operations Directorate</h3>
+      <p style="margin: 2px 0 0 0; font-size: 8.5pt; color: #64748b;">Enterprise Edition • Verified Architecture Specification</p>
+    </div>
+    <div style="text-align: right;">
+      <span class="badge badge-green" style="font-size: 8.5pt; padding: 6px 12px;">✅ APPROVED FOR DISTRIBUTION</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

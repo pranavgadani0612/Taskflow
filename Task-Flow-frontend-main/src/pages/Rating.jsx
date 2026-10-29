@@ -7,6 +7,7 @@ import PageHeader from "../components/common/PageHeader";
 import FormModal from "../components/common/FormModal";
 import DataTable from "../components/common/DataTable";
 import { SelectField, TextInput } from "../components/common/FormFields";
+import { IconStar } from "../components/common/Icons";
 import "../style/main.css";
 import "../style/table.css";
 
@@ -35,6 +36,7 @@ export default function PerformanceRating() {
     reviewPeriod: "Monthly Review",
     feedback: "",
   });
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const isSuperAdmin = user?.email === "gadanipranav@gmail.com" || user?.role?.name === "Super Admin";
   const isCompanyOwner = user?.role?.name === "Company Owner";
@@ -91,15 +93,7 @@ export default function PerformanceRating() {
 
   // Handle Save Rating
   const handleSave = async () => {
-    if (!form.employeeId) {
-      showToast("Please choose an employee to rate", "error");
-      return;
-    }
-    if (!form.score || form.score < 1 || form.score > 5) {
-      showToast("Please give a score between 1 and 5", "error");
-      return;
-    }
-
+    setFieldErrors({});
     try {
       setSubmitting(true);
       const payload = {
@@ -109,6 +103,7 @@ export default function PerformanceRating() {
       await API.post("/ratings", payload);
       showToast("Performance rating submitted successfully!");
       setShowModal(false);
+      setFieldErrors({});
       setForm({
         employeeId: "",
         projectId: "",
@@ -120,7 +115,15 @@ export default function PerformanceRating() {
       fetchRatings();
       fetchSummary();
     } catch (err) {
-      showToast(err.response?.data?.message || "Failed to save rating", "error");
+      const serverErr = err.response?.data?.error || err.response?.data?.message;
+      const serverField = err.response?.data?.field;
+      if (serverField) {
+        setFieldErrors({ [serverField]: serverErr });
+      } else if (serverErr) {
+        showToast(serverErr, "error");
+      } else {
+        showToast("Failed to save rating", "error");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -146,12 +149,16 @@ export default function PerformanceRating() {
           <span
             key={star}
             style={{
-              fontSize: "17px",
-              color: star <= Math.round(score) ? "#f59e0b" : "#d1d5db",
-              userSelect: "none"
+              display: "inline-flex",
+              userSelect: "none",
+              marginRight: "2px"
             }}
           >
-            ★
+            <IconStar
+              size={16}
+              filled={star <= Math.round(score)}
+              color={star <= Math.round(score) ? "#f59e0b" : "#d1d5db"}
+            />
           </span>
         ))}
         <span style={{ marginLeft: "6px", fontWeight: "700", color: "var(--text-main)", fontSize: "13px" }}>
@@ -295,10 +302,10 @@ export default function PerformanceRating() {
           }}
         >
           <div style={{ fontSize: "13px", color: "var(--text-muted)", fontWeight: "600" }}>Company Average Score</div>
-          <div style={{ fontSize: "28px", fontWeight: "800", color: "#f59e0b", marginTop: "4px" }}>
+          <div style={{ fontSize: "28px", fontWeight: "800", color: "#f59e0b", marginTop: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
             {ratings.length > 0
               ? (ratings.reduce((acc, r) => acc + (r.score || 0), 0) / ratings.length).toFixed(1)
-              : "0.0"} <span style={{ fontSize: "18px", color: "#f59e0b" }}>★</span>
+              : "0.0"} <IconStar size={22} color="#f59e0b" filled={true} />
           </div>
         </div>
 
@@ -512,7 +519,11 @@ export default function PerformanceRating() {
           <SelectField
             label="Employee"
             value={form.employeeId}
-            onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
+            onChange={(e) => {
+              setForm({ ...form, employeeId: e.target.value });
+              if (fieldErrors.employeeId) setFieldErrors({ ...fieldErrors, employeeId: null });
+            }}
+            error={fieldErrors.employeeId}
             required
           >
             <option value="">Select Employee to rate</option>
@@ -538,14 +549,19 @@ export default function PerformanceRating() {
                     background: "none",
                     border: "none",
                     cursor: "pointer",
-                    fontSize: "28px",
-                    color: star <= form.score ? "#f59e0b" : "#d1d5db",
+                    padding: "2px",
+                    display: "inline-flex",
+                    alignItems: "center",
                     transition: "transform 0.1s"
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.2)")}
                   onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1.0)")}
                 >
-                  ★
+                  <IconStar
+                    size={28}
+                    filled={star <= form.score}
+                    color={star <= form.score ? "#f59e0b" : "#d1d5db"}
+                  />
                 </button>
               ))}
               <span style={{ marginLeft: "12px", fontWeight: "700", fontSize: "15px", color: "var(--text-main)" }}>

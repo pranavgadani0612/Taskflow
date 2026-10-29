@@ -1,0 +1,334 @@
+/* ========================================================
+   PWA INSTALL BANNER & IOS PROMPT STYLING
+   ======================================================== */
+
+/* 1. Floating Banner (Image 1) */
+.pwa-install-banner {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #111c2e;
+  color: #ffffff;
+  padding: 10px 18px;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  min-width: 320px;
+  max-width: 90vw;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Hide install banner when any modal is open so it cannot block modal actions */
+body.modal-open .pwa-install-banner {
+  display: none !important;
+}
+
+.pwa-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pwa-app-icon-wrapper {
+  height: 42px;
+  width: auto;
+  min-width: 44px;
+  max-width: 130px;
+  background: #ffffff;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.pwa-app-logo {
+  height: 32px;
+  width: auto;
+  max-width: 114px;
+  object-fit: contain;
+}
+
+.pwa-app-icon {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.pwa-banner-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.pwa-app-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.2px;
+  line-height: 1.2;
+}
+
+.pwa-app-subtitle {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 3px;
+  font-weight: 400;
+}
+
+.pwa-banner-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pwa-install-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #2563eb;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: #ffffff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+}
+
+.pwa-install-btn:hover {
+  background: linear-gradient(135deg, #60a5fa 0%, #1e40af 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.55);
+}
+
+.pwa-install-btn:active {
+  transform: translateY(0);
+}
+
+.pwa-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 8px;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.pwa-close-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 2. iOS Modal (Image 2) */
+.pwa-ios-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 999999;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 24px;
+}
+
+.pwa-ios-modal {
+  background: #111c2e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 22px;
+  width: 90vw;
+  max-width: 360px;
+  color: #ffffff;
+  box-shadow: 0 20px 30px rgba(0, 0, 0, 0.6);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  animation: slideUpModal 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pwa-ios-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.pwa-ios-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pwa-app-icon-wrapper-modal {
+  height: 42px;
+  width: auto;
+  min-width: 44px;
+  max-width: 130px;
+  background: #ffffff;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+.pwa-ios-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.pwa-ios-subtitle {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.pwa-ios-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+}
+
+.pwa-ios-close-btn:hover {
+  color: #ffffff;
+}
+
+/* Steps List */
+.pwa-ios-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pwa-ios-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #19273f;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pwa-step-num {
+  width: 24px;
+  height: 24px;
+  background: #2563eb;
+  color: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.pwa-step-content {
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.35;
+}
+
+.pwa-step-content .highlight {
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+/* Bottom bouncing indicator */
+.pwa-ios-pointer {
+  margin-top: 18px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.pwa-pointer-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.pwa-bouncing-arrow {
+  font-size: 20px;
+  color: #38bdf8;
+  animation: bounceDown 1.5s infinite;
+}
+
+/* Animations */
+@keyframes slideUpModal {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUpModal 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Responsive Mobile optimization (B23) */
+@media (max-width: 480px) {
+  .pwa-install-banner {
+    bottom: 12px;
+    padding: 6px 12px;
+    gap: 10px;
+    min-width: 290px;
+    max-width: 94vw;
+    border-radius: 12px;
+  }
+  .pwa-app-icon-wrapper {
+    height: 32px;
+    min-width: 34px;
+    padding: 2px 4px;
+  }
+  .pwa-app-logo {
+    height: 22px;
+  }
+  .pwa-app-title {
+    font-size: 13px;
+  }
+  .pwa-app-subtitle {
+    display: none; /* Hide subtitle on tiny mobile screens to keep it slim */
+  }
+  .pwa-install-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+  .pwa-close-btn {
+    padding: 4px;
+  }
+}
+

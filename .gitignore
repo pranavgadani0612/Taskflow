@@ -48,3 +48,9 @@ Task-Flow-frontend-main/test_document_scenarios.js
 Task-Flow-frontend-main/test_screenshots/
 Task-Flow-frontend-main/full_system_audit/
 Task-Flow-frontend-main/mobile_cut_audit/
+
+*.zip
+deploy_package/
+hostinger_package/
+*.sql
+

@@ -4,7 +4,9 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useSocket } from "../../contexts/SocketContext";
 import API from "../../api/api";
 import { UsersIcon, FolderIcon, ZapIcon, TicketIcon, BugIcon } from "../../components/common/Icons";
+import CelebrationsWidget from "../../components/common/CelebrationsWidget";
 import "../../style/main.css";
+
 
 export default function SuperAdminDashboard() {
   const { user } = useAuth();
@@ -62,9 +64,10 @@ export default function SuperAdminDashboard() {
       setCompanyDetails(padyaSoft);
 
       const issueCount = taskData.filter(t => t.type === "issue").length;
+      const activeStaffCount = staffData.filter(s => (s.status || "Active").toLowerCase() === "active").length;
 
       setMetrics({
-        staffCount: staffData.length,
+        staffCount: activeStaffCount,
         projectsCount: projData.length,
         tasksCount: taskData.length,
         issuesCount: issueCount,
@@ -111,7 +114,7 @@ export default function SuperAdminDashboard() {
 
   return (
     <div style={{ padding: "10px 0 40px 0", maxWidth: "1400px", margin: "0 auto" }}>
-      {/* 🛡️ PADYA SOFT SUPER ADMIN HERO BANNER */}
+      {/* PADYA SOFT SUPER ADMIN HERO BANNER */}
       <div
         style={{
           background: "linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%)",
@@ -210,7 +213,7 @@ export default function SuperAdminDashboard() {
         </div>
       </div>
 
-      {/* 📊 PADYA SOFT STATS */}
+      {/* PADYA SOFT STATS */}
       <div
         style={{
           display: "grid",
@@ -257,110 +260,118 @@ export default function SuperAdminDashboard() {
         />
       </div>
 
-      {/* 🏢 PADYA SOFT PROFILE OVERVIEW & LIVE ACTIVITY */}
+      {/* PADYA SOFT PROFILE OVERVIEW & LIVE ACTIVITY */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
           gap: "24px",
           marginBottom: "32px",
         }}
       >
-        {/* COMPANY PROFILE DETAILS */}
-        <div
-          style={{
-            background: "var(--ui-surface, #ffffff)",
-            borderRadius: "20px",
-            padding: "24px",
-            border: "1px solid var(--ui-border, #e2e8f0)",
-            boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05)",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-            <div>
-              <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: "800", color: "var(--text-main, #1e293b)" }}>
-                Organization Profile
-              </h3>
-              <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)" }}>
-                Padya Soft internal workspace
-              </span>
-            </div>
-            <span
-              style={{
-                fontSize: "11px",
-                fontWeight: "700",
-                padding: "4px 10px",
-                borderRadius: "8px",
-                background: "rgba(16, 185, 129, 0.1)",
-                color: "#10b981",
-                border: "1px solid rgba(16, 185, 129, 0.2)",
-              }}
-            >
-              Active
-            </span>
-          </div>
-
+        {/* LEFT COLUMN: COMPANY PROFILE & CELEBRATIONS */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {/* COMPANY PROFILE DETAILS */}
           <div
             style={{
-              padding: "20px",
-              borderRadius: "16px",
-              background: "var(--ui-bg, #f8fafc)",
+              background: "var(--ui-surface, #ffffff)",
+              borderRadius: "20px",
+              padding: "clamp(16px, 3vw, 24px)",
               border: "1px solid var(--ui-border, #e2e8f0)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "14px",
+              boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-              <div
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <div>
+                <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: "800", color: "var(--text-main, #1e293b)" }}>
+                  Organization Profile
+                </h3>
+                <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)" }}>
+                  Padya Soft internal workspace
+                </span>
+              </div>
+              <span
                 style={{
-                  width: "48px",
-                  height: "48px",
-                  borderRadius: "14px",
-                  background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-                  color: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "20px",
-                  fontWeight: "900",
+                  fontSize: "11px",
+                  fontWeight: "700",
+                  padding: "4px 10px",
+                  borderRadius: "8px",
+                  background: "rgba(16, 185, 129, 0.1)",
+                  color: "#10b981",
+                  border: "1px solid rgba(16, 185, 129, 0.2)",
                 }}
               >
-                PS
-              </div>
-              <div>
-                <div style={{ fontSize: "16px", fontWeight: "800", color: "var(--text-main, #1e293b)" }}>
-                  {companyDetails?.companyName || "Padya Soft"}
-                </div>
-                <div style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", marginTop: "2px" }}>
-                  Primary Workspace Organization
-                </div>
-              </div>
+                Active
+              </span>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "4px" }}>
-              <div style={{ padding: "12px", background: "var(--ui-surface, #ffffff)", borderRadius: "10px", border: "1px solid var(--ui-border, #e2e8f0)" }}>
-                <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)", fontWeight: "700" }}>CONTACT EMAIL</div>
-                <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-main, #1e293b)", marginTop: "3px", wordBreak: "break-all" }}>
-                  {companyDetails?.contactPersonEmail || companyDetails?.email || user?.email || "gadanipranav@gmail.com"}
+            <div
+              style={{
+                padding: "clamp(14px, 2.5vw, 20px)",
+                borderRadius: "16px",
+                background: "var(--ui-bg, #f8fafc)",
+                border: "1px solid var(--ui-border, #e2e8f0)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "14px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                <div
+                  style={{
+                    width: "48px",
+                    height: "48px",
+                    borderRadius: "14px",
+                    background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "20px",
+                    fontWeight: "900",
+                    flexShrink: 0,
+                  }}
+                >
+                  PS
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: "16px", fontWeight: "800", color: "var(--text-main, #1e293b)", wordBreak: "break-word" }}>
+                    {companyDetails?.companyName || "Padya Soft"}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", marginTop: "2px" }}>
+                    Primary Workspace Organization
+                  </div>
                 </div>
               </div>
-              <div style={{ padding: "12px", background: "var(--ui-surface, #ffffff)", borderRadius: "10px", border: "1px solid var(--ui-border, #e2e8f0)" }}>
-                <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)", fontWeight: "700" }}>PHONE / CONTACT</div>
-                <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-main, #1e293b)", marginTop: "3px" }}>
-                  {companyDetails?.phone || companyDetails?.contactPersonPhone || "+91 98765 43210"}
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 140px), 1fr))", gap: "12px", marginTop: "4px" }}>
+                <div style={{ padding: "12px", background: "var(--ui-surface, #ffffff)", borderRadius: "10px", border: "1px solid var(--ui-border, #e2e8f0)", minWidth: 0 }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)", fontWeight: "700" }}>CONTACT EMAIL</div>
+                  <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-main, #1e293b)", marginTop: "3px", wordBreak: "break-all" }}>
+                    {companyDetails?.contactPersonEmail || companyDetails?.email || user?.email || "gadanipranav@gmail.com"}
+                  </div>
+                </div>
+                <div style={{ padding: "12px", background: "var(--ui-surface, #ffffff)", borderRadius: "10px", border: "1px solid var(--ui-border, #e2e8f0)", minWidth: 0 }}>
+                  <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)", fontWeight: "700" }}>PHONE / CONTACT</div>
+                  <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-main, #1e293b)", marginTop: "3px", wordBreak: "break-word" }}>
+                    {companyDetails?.phone || companyDetails?.contactPersonPhone || "+91 98765 43210"}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* TEAM CELEBRATIONS WIDGET */}
+          <CelebrationsWidget />
         </div>
 
         {/* SYSTEM AUDIT & ACTIVITY FEED */}
         <div
+
           style={{
             background: "var(--ui-surface, #ffffff)",
             borderRadius: "20px",
-            padding: "24px",
+            padding: "clamp(16px, 3vw, 24px)",
             border: "1px solid var(--ui-border, #e2e8f0)",
             boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05)",
           }}
@@ -391,33 +402,54 @@ export default function SuperAdminDashboard() {
                   key={evt.id}
                   style={{
                     display: "flex",
-                    alignItems: "center",
+                    alignItems: "flex-start",
                     justifyContent: "space-between",
-                    padding: "12px 16px",
+                    gap: "12px",
+                    padding: "12px 14px",
                     borderRadius: "12px",
                     background: "var(--ui-bg, #f8fafc)",
                     border: "1px solid var(--ui-border, #e2e8f0)",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", minWidth: 0, flex: 1 }}>
                     <span
                       style={{
                         width: "8px",
                         height: "8px",
                         borderRadius: "50%",
                         background: evt.badgeColor,
+                        marginTop: "5px",
+                        flexShrink: 0,
                       }}
                     ></span>
-                    <div>
-                      <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-main, #1e293b)" }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: "700",
+                          color: "var(--text-main, #1e293b)",
+                          wordBreak: "break-word",
+                          lineHeight: "1.4",
+                        }}
+                      >
                         {evt.title}
                       </div>
-                      <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)" }}>
+                      <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)", marginTop: "2px" }}>
                         {evt.category}
                       </div>
                     </div>
                   </div>
-                  <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-muted, #64748b)" }}>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: "600",
+                      color: "var(--text-muted, #64748b)",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                      alignSelf: "flex-start",
+                      marginTop: "2px",
+                    }}
+                  >
                     {evt.time}
                   </span>
                 </div>

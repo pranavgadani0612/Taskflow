@@ -1,0 +1,739 @@
+{
+  "frontend": [
+    {
+      "file": "Assets.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "Attendance.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": false,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "AuditLogs.jsx",
+      "hasModal": false,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": false,
+      "hasFieldErrors": false,
+      "hasInlineRender": false,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "BreakManagement.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": true,
+      "hasAsterisk": false
+    },
+    {
+      "file": "Chat.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": false,
+      "hasInlineRender": false,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "Client.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "ClientInvoicing.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": false,
+      "hasFieldErrors": false,
+      "hasInlineRender": false,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "CompanyList.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": false,
+      "hasInlineRender": false,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "CompanyRegister.jsx",
+      "hasModal": false,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": false,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": true,
+      "hasAsterisk": true
+    },
+    {
+      "file": "Dashboard.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": false,
+      "hasFieldErrors": false,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "Document.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": true,
+      "hasAsterisk": true
+    },
+    {
+      "file": "EmployeeDirectory.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": false,
+      "hasFieldErrors": false,
+      "hasInlineRender": false,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "Expenses.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "ForgotPassword.jsx",
+      "hasModal": false,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": false,
+      "hasFieldErrors": false,
+      "hasInlineRender": false,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "HolidayCalendar.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "Leave.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "Login.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": false,
+      "hasFieldErrors": false,
+      "hasInlineRender": false,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "logout.jsx",
+      "hasModal": false,
+      "hasInput": false,
+      "hasAddAction": false,
+      "hasEditAction": false,
+      "hasDeleteAction": false,
+      "hasFieldErrors": false,
+      "hasInlineRender": false,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "NoticeBoard.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "Payroll.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": false,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": true,
+      "hasAsterisk": true
+    },
+    {
+      "file": "Permission.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": false,
+      "hasInlineRender": false,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "Profile.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": true,
+      "hasAsterisk": true
+    },
+    {
+      "file": "Project.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "QA.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": true,
+      "hasAsterisk": true
+    },
+    {
+      "file": "Rating.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "ResetPassword.jsx",
+      "hasModal": false,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": false,
+      "hasFieldErrors": false,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "ResourceAllocation.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "Role.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": true,
+      "hasAsterisk": false
+    },
+    {
+      "file": "Staff.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "Subscription.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": true,
+      "hasAsterisk": false
+    },
+    {
+      "file": "Task.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "TaskStatus.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": true,
+      "hasAsterisk": false
+    },
+    {
+      "file": "Team.jsx",
+      "hasModal": false,
+      "hasInput": true,
+      "hasAddAction": false,
+      "hasEditAction": false,
+      "hasDeleteAction": false,
+      "hasFieldErrors": false,
+      "hasInlineRender": false,
+      "hasClientPlese": false,
+      "hasAsterisk": false
+    },
+    {
+      "file": "Tickets.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "TimeManager.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": true,
+      "hasFieldErrors": false,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    },
+    {
+      "file": "Timesheet.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": true,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": true,
+      "hasAsterisk": true
+    },
+    {
+      "file": "WfhRequests.jsx",
+      "hasModal": true,
+      "hasInput": true,
+      "hasAddAction": true,
+      "hasEditAction": false,
+      "hasDeleteAction": true,
+      "hasFieldErrors": true,
+      "hasInlineRender": true,
+      "hasClientPlese": false,
+      "hasAsterisk": true
+    }
+  ],
+  "backend": [
+    {
+      "file": "controllers\\companyController.js",
+      "plese": [
+        "Plese enter company name",
+        "Plese enter email",
+        "Plese enter contact person name",
+        "Plese enter contact phone",
+        "Plese enter password",
+        "Plese enter policy title",
+        "Plese enter policy content"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "controllers\\projectController.js",
+      "plese": [
+        "Plese enter project name"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "controllers\\roleController.js",
+      "plese": [
+        "Plese enter role name"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "controllers\\staffController.js",
+      "plese": [
+        "Plese enter name",
+        "Plese enter current password",
+        "Plese enter new password"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "controllers\\subscriptionController.js",
+      "plese": [
+        "Plese enter plan name",
+        "Plese enter price"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "controllers\\taskStatusController.js",
+      "plese": [
+        "Plese enter status name"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "models\\Client.js",
+      "plese": [],
+      "please": [],
+      "required": [
+        "\"Client name is required\"",
+        "\"Email is required\""
+      ]
+    },
+    {
+      "file": "models\\Company.js",
+      "plese": [],
+      "please": [],
+      "required": [
+        "\"company name is required\"",
+        "\"Contact Person Name is required\"",
+        "\"Contact Person Phone is required\"",
+        "\"Contact Person Email is required\"",
+        "\"Company Email is required\"",
+        "\"Address Line 1 is required\"",
+        "\"Country is required\"",
+        "\"State is required\"",
+        "\"City is required\"",
+        "\"Pincode is required\""
+      ]
+    },
+    {
+      "file": "models\\Project.js",
+      "plese": [],
+      "please": [],
+      "required": [
+        "\"Project name is required\"",
+        "\"Status is required\""
+      ]
+    },
+    {
+      "file": "models\\Rating.js",
+      "plese": [],
+      "please": [],
+      "required": [
+        "\"Employee is required\""
+      ]
+    },
+    {
+      "file": "models\\Staff.js",
+      "plese": [],
+      "please": [],
+      "required": [
+        "\"Status is required\""
+      ]
+    },
+    {
+      "file": "routes\\allocationRoutes.js",
+      "plese": [
+        "Plese enter project",
+        "Plese enter employee"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\announcementRoutes.js",
+      "plese": [
+        "Plese enter notice title",
+        "Plese enter content"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\assetRoutes.js",
+      "plese": [
+        "Plese enter asset tag",
+        "Plese enter name"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\attendanceRoutes.js",
+      "plese": [
+        "Plese enter employee",
+        "Plese enter date"
+      ],
+      "please": [],
+      "required": [
+        "\"attendanceId is required\""
+      ]
+    },
+    {
+      "file": "routes\\breakRoutes.js",
+      "plese": [
+        "Plese enter break name",
+        "Plese enter duration"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\clientRoutes.js",
+      "plese": [
+        "Plese enter client name",
+        "Plese enter email",
+        "Plese enter valid email address"
+      ],
+      "please": [
+        "Please enter a valid phone number "
+      ],
+      "required": []
+    },
+    {
+      "file": "routes\\documentRoutes.js",
+      "plese": [
+        "Plese enter description"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\expenseRoutes.js",
+      "plese": [
+        "Plese enter title",
+        "Plese enter category",
+        "Plese enter date",
+        "Plese enter amount"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\holidayRoutes.js",
+      "plese": [
+        "Plese enter holiday name",
+        "Plese enter holiday date"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\leaveRoutes.js",
+      "plese": [
+        "Plese enter from date",
+        "Plese enter to date",
+        "Plese enter reason"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\payrollRoutes.js",
+      "plese": [
+        "Plese enter annual ctc",
+        "Plese enter basic salary"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\qaRoutes.js",
+      "plese": [
+        "Plese enter test case title",
+        "Plese enter bug title"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\ratingRoutes.js",
+      "plese": [
+        "Plese enter employee",
+        "Plese enter score"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\staffRoutes.js",
+      "plese": [
+        "Plese enter name",
+        "Plese enter email",
+        "Plese enter valid email address",
+        "Plese enter password"
+      ],
+      "please": [
+        "Please enter a valid phone number ",
+        "Please enter a valid email address"
+      ],
+      "required": []
+    },
+    {
+      "file": "routes\\taskRoutes.js",
+      "plese": [
+        "Plese enter task title"
+      ],
+      "please": [],
+      "required": [
+        "\"Subtask title is required\""
+      ]
+    },
+    {
+      "file": "routes\\ticketRoutes.js",
+      "plese": [
+        "Plese enter ticket title",
+        "Plese enter description",
+        "Plese enter category"
+      ],
+      "please": [],
+      "required": []
+    },
+    {
+      "file": "routes\\timesheetRoutes.js",
+      "plese": [
+        "Plese enter project",
+        "Plese enter date",
+        "Plese enter hours",
+        "Plese enter description"
+      ],
+      "please": [],
+      "required": [
+        "\"Date is required\""
+      ]
+    },
+    {
+      "file": "routes\\wfhRoutes.js",
+      "plese": [
+        "Plese enter from date",
+        "Plese enter to date",
+        "Plese enter reason"
+      ],
+      "please": [],
+      "required": []
+    }
+  ]
+}

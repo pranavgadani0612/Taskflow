@@ -134,12 +134,12 @@ router.post("/", authMiddleware, async (req, res) => {
     const { employeeId, projectId, taskId, score, category, reviewPeriod, feedback } = req.body;
 
     if (!employeeId) {
-      return res.status(400).json({ message: "Employee is required." });
+      return res.status(400).json({ error: "Plese enter employee", field: "employeeId" });
     }
 
     const numericScore = Number(score);
     if (!numericScore || numericScore < 1 || numericScore > 5) {
-      return res.status(400).json({ message: "Score must be a number between 1 and 5." });
+      return res.status(400).json({ error: "Plese enter score", field: "score" });
     }
 
     // Lookup employee in staff table

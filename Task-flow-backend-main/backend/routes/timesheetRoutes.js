@@ -20,13 +20,21 @@ router.post("/", authMiddleware, async (req, res) => {
       is_billable
     } = req.body;
 
-    if (!project_id || !date || !hours || !description) {
-      return res.status(400).json({ error: "Project, date, hours, and description are required" });
+    if (!project_id) {
+      return res.status(400).json({ error: "Plese enter project" });
     }
-
+    if (!date) {
+      return res.status(400).json({ error: "Plese enter date" });
+    }
+    if (!hours) {
+      return res.status(400).json({ error: "Plese enter hours" });
+    }
     const numHours = parseFloat(hours);
     if (isNaN(numHours) || numHours <= 0 || numHours > 24) {
       return res.status(400).json({ error: "Hours must be a positive number up to 24" });
+    }
+    if (!description || !description.trim()) {
+      return res.status(400).json({ error: "Plese enter description" });
     }
 
     const id = `ts_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
@@ -58,13 +66,12 @@ router.post("/", authMiddleware, async (req, res) => {
       ]
     );
 
-    // Sync subtask status to Task model if applicable
+    // Sync subtask status to MySQL subtasks table if applicable
     if (task_id && subtask_id && cleanTaskStatus) {
       try {
-        const Task = require("../models/Task");
-        await Task.updateOne(
-          { _id: task_id, "subtasks._id": subtask_id },
-          { $set: { "subtasks.$.status": cleanTaskStatus } }
+        await pool.query(
+          "UPDATE subtasks SET status = ? WHERE id = ? AND task_id = ?",
+          [cleanTaskStatus, subtask_id, task_id]
         );
       } catch (e) {
         console.error("Subtask status sync error:", e);
@@ -138,27 +145,32 @@ router.get("/all", authMiddleware, async (req, res) => {
     }
 
     const { projectId, status, userId, date } = req.query;
-    let query = `SELECT * FROM timesheets WHERE 1=1`;
+    let query = `
+      SELECT t.* 
+      FROM timesheets t
+      LEFT JOIN staff s ON t.user_id = s.id OR (t.user_email = s.email AND t.user_email != '')
+      WHERE (s.status = 'Active' OR s.status IS NULL)
+    `;
     const params = [];
 
     if (projectId) {
-      query += ` AND project_id = ?`;
+      query += ` AND t.project_id = ?`;
       params.push(projectId);
     }
     if (status) {
-      query += ` AND status = ?`;
+      query += ` AND t.status = ?`;
       params.push(status);
     }
     if (userId) {
-      query += ` AND user_id = ?`;
+      query += ` AND t.user_id = ?`;
       params.push(userId);
     }
     if (date) {
-      query += ` AND date = ?`;
+      query += ` AND t.date = ?`;
       params.push(date);
     }
 
-    query += ` ORDER BY date DESC, created_at DESC LIMIT 200`;
+    query += ` ORDER BY t.date DESC, t.created_at DESC LIMIT 200`;
 
     const [rows] = await pool.query(query, params);
     res.json(rows);
@@ -244,6 +256,10 @@ router.patch("/:id/action", authMiddleware, async (req, res) => {
 // ─── 6. UPDATE / EDIT TIMESHEET ─────────────────────────────────────────────
 router.put("/:id", authMiddleware, async (req, res) => {
   try {
+    const userId = (req.user._id || req.user.id).toString();
+    const isSuperAdmin = req.user.email === "gadanipranav@gmail.com" || req.user.role?.name === "Super Admin";
+    const isManager = req.user.position?.includes("Manager") || req.user.role?.name?.includes("Manager");
+
     const { project_id, project_name, task_id, task_title, subtask_id, subtask_title, date, hours, description, is_billable, task_status } = req.body;
 
     const [existing] = await pool.query(`SELECT * FROM timesheets WHERE id = ?`, [req.params.id]);
@@ -251,8 +267,13 @@ router.put("/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "Timesheet entry not found" });
     }
 
-    if (existing[0].status === "Approved") {
+    if (existing[0].status === "Approved" && !isSuperAdmin) {
       return res.status(400).json({ error: "Cannot edit an approved timesheet" });
+    }
+
+    // Ensure staff can only edit their own timesheet
+    if (!isSuperAdmin && !isManager && existing[0].user_id !== userId && existing[0].user_email !== req.user.email) {
+      return res.status(403).json({ error: "You can only edit your own timesheet" });
     }
 
     const cleanTaskStatus = ["Pending", "In Process", "Complete"].includes(task_status) ? task_status : (existing[0].task_status || "In Process");
@@ -260,7 +281,7 @@ router.put("/:id", authMiddleware, async (req, res) => {
     await pool.query(
       `UPDATE timesheets 
        SET project_id = ?, project_name = ?, task_id = ?, task_title = ?, subtask_id = ?, subtask_title = ?, date = ?, hours = ?, description = ?, is_billable = ?, task_status = ?, status = 'Submitted'
-       WHERE id = ? AND user_id = ?`,
+       WHERE id = ?`,
       [
         project_id,
         project_name,
@@ -273,18 +294,16 @@ router.put("/:id", authMiddleware, async (req, res) => {
         description,
         is_billable ? 1 : 0,
         cleanTaskStatus,
-        req.params.id,
-        userId
+        req.params.id
       ]
     );
 
-    // Sync subtask status to Task model if applicable
+    // Sync subtask status to MySQL subtasks table if applicable
     if (task_id && subtask_id && cleanTaskStatus) {
       try {
-        const Task = require("../models/Task");
-        await Task.updateOne(
-          { _id: task_id, "subtasks._id": subtask_id },
-          { $set: { "subtasks.$.status": cleanTaskStatus } }
+        await pool.query(
+          "UPDATE subtasks SET status = ? WHERE id = ? AND task_id = ?",
+          [cleanTaskStatus, subtask_id, task_id]
         );
       } catch (e) {
         console.error("Subtask status sync error:", e);

@@ -16,6 +16,7 @@ export default function TaskStatus() {
   const { selectedCompany } = useCompany();
   const [statuses, setStatuses] = useState([]);
   const [toast, setToast] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [form, setForm] = useState({
     name: "",
     status: "",
@@ -54,17 +55,22 @@ export default function TaskStatus() {
 
   const resetForm = () => {
     setForm({ name: "", status: "", project: selectedProject?._id || "" });
+    setFieldErrors({});
     setEditId(null);
   };
 
   const handleSave = async () => {
+    setFieldErrors({});
     // Validation
+    const errors = {};
     if (!form.name.trim()) {
-      showToast("Status name is required", "error");
-      return;
+      errors.name = "Plese enter status name";
     }
     if (!form.status) {
-      showToast("Please select a status", "error");
+      errors.status = "Plese enter status";
+    }
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
 
@@ -102,7 +108,12 @@ export default function TaskStatus() {
       setShowModal(false);
     } catch (error) {
       console.error("Error saving task status:", error);
-      showToast("Error saving task status", "error");
+      const errMsg = error.response?.data?.error || error.response?.data?.message || error.message || "Error saving task status";
+      if (errMsg.toLowerCase().includes("status name") || errMsg.toLowerCase().includes("name")) {
+        setFieldErrors({ name: "Plese enter status name" });
+      } else {
+        showToast(errMsg, "error");
+      }
     }
   };
 
@@ -122,6 +133,7 @@ export default function TaskStatus() {
       status: item.status,
       project: item.project?._id || item.project || "",
     });
+    setFieldErrors({});
     setEditId(item._id);
     setShowModal(true);
   };
@@ -142,13 +154,7 @@ export default function TaskStatus() {
       <PageHeader
         title={selectedProject ? `${selectedProject.name} — Task Status` : "Task Status"}
         buttonText={hasPermission("task_status_management", "create") ? "Add Status" : null}
-        onButtonClick={() => {
-          if (!selectedProject) {
-            showToast("Please select a specific project from the top menu to add a status", "error");
-            return;
-          }
-          handleAddClick();
-        }}
+        onButtonClick={handleAddClick}
       />
 
       <FormModal
@@ -159,6 +165,7 @@ export default function TaskStatus() {
         saveText={editId ? "Update" : "Save"}
       >
         <form
+          noValidate
           onSubmit={(e) => {
             e.preventDefault();
             handleSave();
@@ -169,8 +176,12 @@ export default function TaskStatus() {
             type="text"
             placeholder="Status Name"
             value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            onChange={(e) => {
+              setForm({ ...form, name: e.target.value });
+              if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: null }));
+            }}
             required
+            error={fieldErrors.name}
           />
 
           <SelectField

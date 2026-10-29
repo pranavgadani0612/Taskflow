@@ -3,7 +3,12 @@ import API from "../api/api";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useProject } from "../contexts/ProjectContext";
-import { ClipboardIcon, BugIcon, CheckIcon, CloseIcon } from "../components/common/Icons";
+import { usePermissions } from "../contexts/PermissionContext";
+import { ClipboardIcon, BugIcon, CheckIcon, CloseIcon, TrashIcon, EditIcon } from "../components/common/Icons";
+import ConfirmModal from "../components/common/ConfirmModal";
+import FormModal from "../components/common/FormModal";
+import Pagination from "../components/common/Pagination";
+import { useTableSort, SortIndicator } from "../utils/tableSort";
 import "../style/main.css";
 import "../style/table.css";
 
@@ -11,10 +16,26 @@ export default function QAManagement() {
   const { user } = useAuth();
   const { showToast } = useToast();
   const { selectedProject } = useProject();
+  const { hasPermission: ctxHasPermission } = usePermissions();
+
+  const isSuperAdmin = user?.email === "gadanipranav@gmail.com" || user?.role?.name === "Super Admin";
+  const isOwner = isSuperAdmin || user?.role?.name === "Company Owner";
+  const hasPermission = (action = "read") => {
+    if (isOwner) return true;
+    return ctxHasPermission("qa_management", action);
+  };
 
   const [activeTab, setActiveTab] = useState("testcases"); // "testcases" | "bugs"
   const [testCases, setTestCases] = useState([]);
   const [bugs, setBugs] = useState([]);
+  const [tcPage, setTcPage] = useState(1);
+  const [tcPageSize, setTcPageSize] = useState(10);
+  const { sortedData: sortedTc, sortConfig: tcSortConfig, requestSort: requestTcSort } = useTableSort(testCases, "title", "asc");
+  const paginatedTc = sortedTc.slice((tcPage - 1) * tcPageSize, tcPage * tcPageSize);
+  const [bugPage, setBugPage] = useState(1);
+  const [bugPageSize, setBugPageSize] = useState(10);
+  const { sortedData: sortedBugs, sortConfig: bugSortConfig, requestSort: requestBugSort } = useTableSort(bugs, "severity", "desc");
+  const paginatedBugs = sortedBugs.slice((bugPage - 1) * bugPageSize, bugPage * bugPageSize);
   const [projects, setProjects] = useState([]);
   const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -23,6 +44,10 @@ export default function QAManagement() {
   const [showTcModal, setShowTcModal] = useState(false);
   const [showBugModal, setShowBugModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+  const [tcFieldErrors, setTcFieldErrors] = useState({});
+  const [bugFieldErrors, setBugFieldErrors] = useState({});
 
   const [tcForm, setTcForm] = useState({
     project_id: "",
@@ -111,7 +136,12 @@ export default function QAManagement() {
 
   // Submit Test Case
   const handleSaveTestCase = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    setTcFieldErrors({});
+    if (!tcForm.title || !tcForm.title.trim()) {
+      setTcFieldErrors({ title: "Plese enter test case title" });
+      return;
+    }
     try {
       const proj = projects.find(p => p._id === tcForm.project_id) || selectedProject;
       const payload = {
@@ -129,15 +159,26 @@ export default function QAManagement() {
       }
       setShowTcModal(false);
       setEditItem(null);
+      setTcFieldErrors({});
       fetchTestCases();
     } catch (err) {
-      showToast("Failed to save test case", "error");
+      const errMsg = err.response?.data?.error || err.message || "Failed to save test case";
+      if (errMsg.toLowerCase().includes("title")) {
+        setTcFieldErrors({ title: "Plese enter test case title" });
+      } else {
+        showToast(errMsg, "error");
+      }
     }
   };
 
   // Submit Bug
   const handleSaveBug = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    setBugFieldErrors({});
+    if (!bugForm.title || !bugForm.title.trim()) {
+      setBugFieldErrors({ title: "Plese enter bug title" });
+      return;
+    }
     try {
       const proj = projects.find(p => p._id === bugForm.project_id) || selectedProject;
       const payload = {
@@ -155,32 +196,67 @@ export default function QAManagement() {
       }
       setShowBugModal(false);
       setEditItem(null);
+      setBugFieldErrors({});
       fetchBugs();
     } catch (err) {
-      showToast("Failed to save bug", "error");
+      const errMsg = err.response?.data?.error || err.message || "Failed to save bug";
+      if (errMsg.toLowerCase().includes("title")) {
+        setBugFieldErrors({ title: "Plese enter bug title" });
+      } else {
+        showToast(errMsg, "error");
+      }
     }
   };
 
-  // Delete Handlers
-  const handleDeleteTestCase = async (id) => {
-    if (!window.confirm("Delete this test case?")) return;
-    try {
-      await API.delete(`/qa/test-cases/${id}`);
-      showToast("Test Case deleted");
-      fetchTestCases();
-    } catch (err) {
-      showToast("Delete failed", "error");
-    }
+  // Edit Handlers
+  const handleEditTestCase = (tc) => {
+    setEditItem(tc);
+    setTcForm({
+      project_id: tc.project_id || "",
+      project_name: tc.project_name || "",
+      module_name: tc.module_name || "",
+      title: tc.title || "",
+      preconditions: tc.preconditions || "",
+      steps: tc.steps || "",
+      expected_result: tc.expected_result || "",
+      severity: tc.severity || "Medium"
+    });
+    setShowTcModal(true);
   };
 
-  const handleDeleteBug = async (id) => {
-    if (!window.confirm("Delete this bug report?")) return;
+  const handleEditBug = (b) => {
+    setEditItem(b);
+    setBugForm({
+      project_id: b.project_id || "",
+      project_name: b.project_name || "",
+      test_case_id: b.test_case_id || "",
+      title: b.title || "",
+      description: b.description || "",
+      steps_to_reproduce: b.steps_to_reproduce || "",
+      severity: b.severity || "Major",
+      assigned_to: b.assigned_to || "",
+      environment: b.environment || "Staging"
+    });
+    setShowBugModal(true);
+  };
+
+  // Delete Confirmation Handler
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirm) return;
     try {
-      await API.delete(`/qa/bugs/${id}`);
-      showToast("Bug deleted");
-      fetchBugs();
+      if (deleteConfirm.type === "testcase") {
+        await API.delete(`/qa/test-cases/${deleteConfirm.id}`);
+        showToast("Test Case deleted successfully!", "delete");
+        fetchTestCases();
+      } else if (deleteConfirm.type === "bug") {
+        await API.delete(`/qa/bugs/${deleteConfirm.id}`);
+        showToast("Bug deleted successfully!", "delete");
+        fetchBugs();
+      }
     } catch (err) {
       showToast("Delete failed", "error");
+    } finally {
+      setDeleteConfirm(null);
     }
   };
 
@@ -198,7 +274,7 @@ export default function QAManagement() {
         </div>
 
         <div style={{ display: "flex", gap: "10px" }}>
-          {activeTab === "testcases" ? (
+          {hasPermission("create") && (activeTab === "testcases" ? (
             <button
               onClick={() => {
                 setEditItem(null);
@@ -239,7 +315,7 @@ export default function QAManagement() {
             >
               + Log New Bug
             </button>
-          )}
+          ))}
         </div>
       </div>
 
@@ -295,10 +371,18 @@ export default function QAManagement() {
             <table style={{ width: "100%", minWidth: "750px", borderCollapse: "collapse", textAlign: "left" }}>
             <thead>
               <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569", fontSize: "13px" }}>
-                <th style={{ padding: "14px 16px" }}>Test Case</th>
-                <th style={{ padding: "14px 16px" }}>Module / Project</th>
-                <th style={{ padding: "14px 16px" }}>Severity</th>
-                <th style={{ padding: "14px 16px" }}>Status</th>
+                <th onClick={() => requestTcSort("title")} style={{ padding: "14px 16px", cursor: "pointer", userSelect: "none" }}>
+                  Test Case <SortIndicator sortKey="title" currentKey={tcSortConfig.key} direction={tcSortConfig.direction} />
+                </th>
+                <th onClick={() => requestTcSort("module_name")} style={{ padding: "14px 16px", cursor: "pointer", userSelect: "none" }}>
+                  Module / Project <SortIndicator sortKey="module_name" currentKey={tcSortConfig.key} direction={tcSortConfig.direction} />
+                </th>
+                <th onClick={() => requestTcSort("severity")} style={{ padding: "14px 16px", cursor: "pointer", userSelect: "none" }}>
+                  Severity <SortIndicator sortKey="severity" currentKey={tcSortConfig.key} direction={tcSortConfig.direction} />
+                </th>
+                <th onClick={() => requestTcSort("last_status")} style={{ padding: "14px 16px", cursor: "pointer", userSelect: "none" }}>
+                  Status <SortIndicator sortKey="last_status" currentKey={tcSortConfig.key} direction={tcSortConfig.direction} />
+                </th>
                 <th style={{ padding: "14px 16px" }}>Execute Run</th>
                 <th style={{ padding: "14px 16px" }}>Actions</th>
               </tr>
@@ -309,7 +393,7 @@ export default function QAManagement() {
               ) : testCases.length === 0 ? (
                 <tr><td colSpan="6" style={{ padding: "40px", textAlign: "center", color: "#94a3b8" }}>No test cases created yet. Click "+ Create Test Case" above.</td></tr>
               ) : (
-                testCases.map((tc) => (
+                paginatedTc.map((tc) => (
                   <tr key={tc.id} style={{ borderBottom: "1px solid #f1f5f9", fontSize: "14px" }}>
                     <td style={{ padding: "14px 16px" }}>
                       <strong style={{ color: "#1e293b" }}>{tc.title}</strong>
@@ -340,40 +424,67 @@ export default function QAManagement() {
                       </span>
                     </td>
                     <td style={{ padding: "14px 16px" }}>
-                      <button
-                        onClick={() => handleExecuteTestCase(tc.id, "Passed")}
-                        style={{
-                          padding: "4px 10px", background: "#dcfce7", color: "#15803d", border: "none",
-                          borderRadius: "6px", cursor: "pointer", fontWeight: "700", marginRight: "6px",
-                          display: "inline-flex", alignItems: "center", gap: "4px"
-                        }}
-                      >
-                        <CheckIcon size={12} color="#15803d" /> Pass
-                      </button>
-                      <button
-                        onClick={() => handleExecuteTestCase(tc.id, "Failed")}
-                        style={{
-                          padding: "4px 10px", background: "#fee2e2", color: "#b91c1c", border: "none",
-                          borderRadius: "6px", cursor: "pointer", fontWeight: "700",
-                          display: "inline-flex", alignItems: "center", gap: "4px"
-                        }}
-                      >
-                        <CloseIcon size={12} color="#b91c1c" /> Fail
-                      </button>
+                      {hasPermission("update") && (
+                        <>
+                          <button
+                            onClick={() => handleExecuteTestCase(tc.id, "Passed")}
+                            style={{
+                              padding: "4px 10px", background: "#dcfce7", color: "#15803d", border: "none",
+                              borderRadius: "6px", cursor: "pointer", fontWeight: "700", marginRight: "6px",
+                              display: "inline-flex", alignItems: "center", gap: "4px"
+                            }}
+                          >
+                            <CheckIcon size={12} color="#15803d" /> Pass
+                          </button>
+                          <button
+                            onClick={() => handleExecuteTestCase(tc.id, "Failed")}
+                            style={{
+                              padding: "4px 10px", background: "#fee2e2", color: "#b91c1c", border: "none",
+                              borderRadius: "6px", cursor: "pointer", fontWeight: "700",
+                              display: "inline-flex", alignItems: "center", gap: "4px"
+                            }}
+                          >
+                            <CloseIcon size={12} color="#b91c1c" /> Fail
+                          </button>
+                        </>
+                      )}
                     </td>
                     <td style={{ padding: "14px 16px" }}>
-                      <button
-                        onClick={() => handleDeleteTestCase(tc.id)}
-                        style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontWeight: "600" }}
-                      >
-                        Delete
-                      </button>
+                      <div className="action-buttons">
+                        {hasPermission("update") && (
+                          <button
+                            type="button"
+                            className="action-btn"
+                            onClick={() => handleEditTestCase(tc)}
+                            title="Edit"
+                          >
+                            <EditIcon size={16} />
+                          </button>
+                        )}
+                        {hasPermission("delete") && (
+                          <button
+                            type="button"
+                            className="action-btn delete"
+                            onClick={() => setDeleteConfirm({ type: "testcase", id: tc.id })}
+                            title="Delete"
+                          >
+                            <TrashIcon size={16} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={tcPage}
+            totalRecords={testCases.length}
+            pageSize={tcPageSize}
+            onPageChange={setTcPage}
+            onPageSizeChange={(newSize) => { setTcPageSize(newSize); setTcPage(1); }}
+          />
           </div>
         </div>
       )}
@@ -391,11 +502,21 @@ export default function QAManagement() {
             <table style={{ width: "100%", minWidth: "750px", borderCollapse: "collapse", textAlign: "left" }}>
             <thead>
               <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569", fontSize: "13px" }}>
-                <th style={{ padding: "14px 16px" }}>Bug Details</th>
-                <th style={{ padding: "14px 16px" }}>Severity</th>
-                <th style={{ padding: "14px 16px" }}>Environment</th>
-                <th style={{ padding: "14px 16px" }}>Assigned Developer</th>
-                <th style={{ padding: "14px 16px" }}>Bug Status</th>
+                <th onClick={() => requestBugSort("title")} style={{ padding: "14px 16px", cursor: "pointer", userSelect: "none" }}>
+                  Bug Details <SortIndicator sortKey="title" currentKey={bugSortConfig.key} direction={bugSortConfig.direction} />
+                </th>
+                <th onClick={() => requestBugSort("severity")} style={{ padding: "14px 16px", cursor: "pointer", userSelect: "none" }}>
+                  Severity <SortIndicator sortKey="severity" currentKey={bugSortConfig.key} direction={bugSortConfig.direction} />
+                </th>
+                <th onClick={() => requestBugSort("environment")} style={{ padding: "14px 16px", cursor: "pointer", userSelect: "none" }}>
+                  Environment <SortIndicator sortKey="environment" currentKey={bugSortConfig.key} direction={bugSortConfig.direction} />
+                </th>
+                <th onClick={() => requestBugSort("assigned_to")} style={{ padding: "14px 16px", cursor: "pointer", userSelect: "none" }}>
+                  Assigned Developer <SortIndicator sortKey="assigned_to" currentKey={bugSortConfig.key} direction={bugSortConfig.direction} />
+                </th>
+                <th onClick={() => requestBugSort("status")} style={{ padding: "14px 16px", cursor: "pointer", userSelect: "none" }}>
+                  Bug Status <SortIndicator sortKey="status" currentKey={bugSortConfig.key} direction={bugSortConfig.direction} />
+                </th>
                 <th style={{ padding: "14px 16px" }}>Actions</th>
               </tr>
             </thead>
@@ -405,7 +526,7 @@ export default function QAManagement() {
               ) : bugs.length === 0 ? (
                 <tr><td colSpan="6" style={{ padding: "40px", textAlign: "center", color: "#94a3b8" }}>No defects logged. Clean build!</td></tr>
               ) : (
-                bugs.map((b) => (
+                paginatedBugs.map((b) => (
                   <tr key={b.id} style={{ borderBottom: "1px solid #f1f5f9", fontSize: "14px" }}>
                     <td style={{ padding: "14px 16px" }}>
                       <strong style={{ color: "#dc2626" }}>{b.title}</strong>
@@ -451,184 +572,244 @@ export default function QAManagement() {
                       </select>
                     </td>
                     <td style={{ padding: "14px 16px" }}>
-                      <button
-                        onClick={() => handleDeleteBug(b.id)}
-                        style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontWeight: "600" }}
-                      >
-                        Delete
-                      </button>
+                      <div className="action-buttons">
+                        {hasPermission("update") && (
+                          <button
+                            type="button"
+                            className="action-btn"
+                            onClick={() => handleEditBug(b)}
+                            title="Edit"
+                          >
+                            <EditIcon size={16} />
+                          </button>
+                        )}
+                        {hasPermission("delete") && (
+                          <button
+                            type="button"
+                            className="action-btn delete"
+                            onClick={() => setDeleteConfirm({ type: "bug", id: b.id })}
+                            title="Delete"
+                          >
+                            <TrashIcon size={16} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={bugPage}
+            totalRecords={bugs.length}
+            pageSize={bugPageSize}
+            onPageChange={setBugPage}
+            onPageSizeChange={(newSize) => { setBugPageSize(newSize); setBugPage(1); }}
+          />
           </div>
         </div>
       )}
 
-      {/* MODAL: CREATE TEST CASE */}
-      {showTcModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999 }}>
-          <div style={{ background: "#fff", padding: "28px", borderRadius: "12px", width: "520px", maxWidth: "90%" }}>
-            <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: "700" }}>Create QA Test Case</h3>
-            <form onSubmit={handleSaveTestCase} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Project</label>
-                <select
-                  value={tcForm.project_id}
-                  onChange={(e) => setTcForm({ ...tcForm, project_id: e.target.value })}
-                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                >
-                  {projects.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
-                </select>
-              </div>
+      {/* MODAL: CREATE / EDIT TEST CASE */}
+      <FormModal
+        show={showTcModal}
+        onClose={() => {
+          setShowTcModal(false);
+          setEditItem(null);
+        }}
+        title={editItem ? "Edit QA Test Case" : "Create QA Test Case"}
+        onSave={handleSaveTestCase}
+        saveText={editItem ? "Update Test Case" : "Save Test Case"}
+        maxWidth="620px"
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div>
+            <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>Project</label>
+            <select
+              value={tcForm.project_id}
+              onChange={(e) => setTcForm({ ...tcForm, project_id: e.target.value })}
+              style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--ui-border)", borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)" }}
+            >
+              {projects.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
+            </select>
+          </div>
 
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Test Case Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Verify password reset email validation"
-                  value={tcForm.title}
-                  onChange={(e) => setTcForm({ ...tcForm, title: e.target.value })}
-                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                />
+          <div>
+            <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>
+              Test Case Title <span style={{ color: "#ef4444" }}>*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Verify password reset email validation"
+              required
+              value={tcForm.title}
+              onChange={(e) => {
+                setTcForm({ ...tcForm, title: e.target.value });
+                if (tcFieldErrors.title) setTcFieldErrors(prev => ({ ...prev, title: null }));
+              }}
+              style={{
+                width: "100%", padding: "10px 12px",
+                border: tcFieldErrors.title ? "1px solid #ef4444" : "1px solid var(--ui-border)",
+                borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)"
+              }}
+            />
+            {tcFieldErrors.title && (
+              <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                {tcFieldErrors.title}
               </div>
+            )}
+          </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <div>
-                  <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Module Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Auth / Dashboard / Tasks"
-                    value={tcForm.module_name}
-                    onChange={(e) => setTcForm({ ...tcForm, module_name: e.target.value })}
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Severity</label>
-                  <select
-                    value={tcForm.severity}
-                    onChange={(e) => setTcForm({ ...tcForm, severity: e.target.value })}
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                  >
-                    <option value="Critical">Critical</option>
-                    <option value="High">High</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Low">Low</option>
-                  </select>
-                </div>
-              </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+            <div>
+              <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>Module Name</label>
+              <input
+                type="text"
+                placeholder="e.g. Auth / Dashboard / Tasks"
+                value={tcForm.module_name}
+                onChange={(e) => setTcForm({ ...tcForm, module_name: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--ui-border)", borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)" }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>Severity</label>
+              <select
+                value={tcForm.severity}
+                onChange={(e) => setTcForm({ ...tcForm, severity: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--ui-border)", borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)" }}
+              >
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+          </div>
 
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Steps to Reproduce</label>
-                <textarea
-                  rows="3"
-                  placeholder="1. Enter email&#10;2. Click submit button..."
-                  value={tcForm.steps}
-                  onChange={(e) => setTcForm({ ...tcForm, steps: e.target.value })}
-                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                />
-              </div>
+          <div>
+            <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>Steps to Reproduce</label>
+            <textarea
+              rows="3"
+              placeholder="1. Enter email&#10;2. Click submit button..."
+              value={tcForm.steps}
+              onChange={(e) => setTcForm({ ...tcForm, steps: e.target.value })}
+              style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--ui-border)", borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)", resize: "vertical" }}
+            />
+          </div>
 
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Expected Result</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Email should be received with reset token"
-                  value={tcForm.expected_result}
-                  onChange={(e) => setTcForm({ ...tcForm, expected_result: e.target.value })}
-                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                />
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
-                <button type="button" onClick={() => setShowTcModal(false)} style={{ padding: "8px 16px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: "6px", cursor: "pointer" }}>Cancel</button>
-                <button type="submit" style={{ padding: "8px 18px", background: "#4f46e5", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "600" }}>Save Test Case</button>
-              </div>
-            </form>
+          <div>
+            <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>Expected Result</label>
+            <input
+              type="text"
+              placeholder="e.g. Email should be received with reset token"
+              value={tcForm.expected_result}
+              onChange={(e) => setTcForm({ ...tcForm, expected_result: e.target.value })}
+              style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--ui-border)", borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)" }}
+            />
           </div>
         </div>
-      )}
+      </FormModal>
 
-      {/* MODAL: LOG BUG */}
-      {showBugModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999 }}>
-          <div style={{ background: "#fff", padding: "28px", borderRadius: "12px", width: "520px", maxWidth: "90%" }}>
-            <h3 style={{ margin: "0 0 16px", fontSize: "18px", fontWeight: "700", color: "#dc2626" }}>Log QA Bug / Defect</h3>
-            <form onSubmit={handleSaveBug} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Project</label>
-                <select
-                  value={bugForm.project_id}
-                  onChange={(e) => setBugForm({ ...bugForm, project_id: e.target.value })}
-                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                >
-                  {projects.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
-                </select>
+      {/* MODAL: LOG / EDIT BUG */}
+      <FormModal
+        show={showBugModal}
+        onClose={() => {
+          setShowBugModal(false);
+          setEditItem(null);
+        }}
+        title={editItem ? "Edit QA Bug / Defect" : "Log QA Bug / Defect"}
+        onSave={handleSaveBug}
+        saveText={editItem ? "Update Bug" : "Log Bug"}
+        maxWidth="620px"
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div>
+            <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>Project</label>
+            <select
+              value={bugForm.project_id}
+              onChange={(e) => setBugForm({ ...bugForm, project_id: e.target.value })}
+              style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--ui-border)", borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)" }}
+            >
+              {projects.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>
+              Bug Title <span style={{ color: "#ef4444" }}>*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. 500 Internal Error when submitting timesheet"
+              required
+              value={bugForm.title}
+              onChange={(e) => {
+                setBugForm({ ...bugForm, title: e.target.value });
+                if (bugFieldErrors.title) setBugFieldErrors(prev => ({ ...prev, title: null }));
+              }}
+              style={{
+                width: "100%", padding: "10px 12px",
+                border: bugFieldErrors.title ? "1px solid #ef4444" : "1px solid var(--ui-border)",
+                borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)"
+              }}
+            />
+            {bugFieldErrors.title && (
+              <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                {bugFieldErrors.title}
               </div>
+            )}
+          </div>
 
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Bug Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 500 Internal Error when submitting timesheet"
-                  value={bugForm.title}
-                  onChange={(e) => setBugForm({ ...bugForm, title: e.target.value })}
-                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                />
-              </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+            <div>
+              <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>Severity</label>
+              <select
+                value={bugForm.severity}
+                onChange={(e) => setBugForm({ ...bugForm, severity: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--ui-border)", borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)" }}
+              >
+                <option value="Critical">Critical (Blocker)</option>
+                <option value="Major">Major</option>
+                <option value="Medium">Medium</option>
+                <option value="Minor">Minor / Cosmetic</option>
+              </select>
+            </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <div>
-                  <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Severity</label>
-                  <select
-                    value={bugForm.severity}
-                    onChange={(e) => setBugForm({ ...bugForm, severity: e.target.value })}
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                  >
-                    <option value="Critical">Critical (Blocker)</option>
-                    <option value="Major">Major</option>
-                    <option value="Medium">Medium</option>
-                    <option value="Minor">Minor / Cosmetic</option>
-                  </select>
-                </div>
+            <div>
+              <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>Assign Developer</label>
+              <select
+                value={bugForm.assigned_to}
+                onChange={(e) => setBugForm({ ...bugForm, assigned_to: e.target.value })}
+                style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--ui-border)", borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)" }}
+              >
+                <option value="Unassigned">-- Choose Developer --</option>
+                {staffList.map(s => <option key={s._id} value={s.name}>{s.name} ({s.position || "Dev"})</option>)}
+              </select>
+            </div>
+          </div>
 
-                <div>
-                  <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Assign Developer</label>
-                  <select
-                    value={bugForm.assigned_to}
-                    onChange={(e) => setBugForm({ ...bugForm, assigned_to: e.target.value })}
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                  >
-                    <option value="Unassigned">-- Choose Developer --</option>
-                    {staffList.map(s => <option key={s._id} value={s.name}>{s.name} ({s.position || "Dev"})</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Bug Description & Steps</label>
-                <textarea
-                  rows="3"
-                  placeholder="Details of the bug and steps taken before failure..."
-                  value={bugForm.description}
-                  onChange={(e) => setBugForm({ ...bugForm, description: e.target.value })}
-                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #cbd5e1", borderRadius: "6px", marginTop: "4px" }}
-                />
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "10px" }}>
-                <button type="button" onClick={() => setShowBugModal(false)} style={{ padding: "8px 16px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: "6px", cursor: "pointer" }}>Cancel</button>
-                <button type="submit" style={{ padding: "8px 18px", background: "#dc2626", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: "600" }}>Log Bug</button>
-              </div>
-            </form>
+          <div>
+            <label style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main)", display: "block", marginBottom: "6px" }}>Bug Description & Steps</label>
+            <textarea
+              rows="3"
+              placeholder="Details of the bug and steps taken before failure..."
+              value={bugForm.description}
+              onChange={(e) => setBugForm({ ...bugForm, description: e.target.value })}
+              style={{ width: "100%", padding: "10px 12px", border: "1px solid var(--ui-border)", borderRadius: "6px", background: "var(--ui-surface)", color: "var(--text-main)", resize: "vertical" }}
+            />
           </div>
         </div>
-      )}
+      </FormModal>
+
+      {/* DELETE CONFIRMATION MODAL */}
+      <ConfirmModal
+        show={deleteConfirm !== null}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Confirmation"
+        message="Are you sure you want to delete this record?"
+      />
     </div>
   );
 }

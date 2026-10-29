@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { useProject } from "../../contexts/ProjectContext";
 import { useSocket } from "../../contexts/SocketContext";
 import {
   ClockIcon,
@@ -18,11 +19,15 @@ import {
 } from "../../components/common/Icons";
 import AlertModal from "../../components/common/AlertModal";
 import ConfirmModal from "../../components/common/ConfirmModal";
+import CelebrationsWidget from "../../components/common/CelebrationsWidget";
+import ForgotPunchOutAlert from "../../components/attendance/ForgotPunchOutAlert";
 import API from "../../api/api";
 import "../../style/main.css";
 
+
 export default function EmployeeDashboard() {
   const { user } = useAuth();
+  const { selectedProject } = useProject();
   const navigate = useNavigate();
   const { socket } = useSocket();
 
@@ -51,6 +56,7 @@ export default function EmployeeDashboard() {
   const [loading, setLoading] = useState(true);
   const [alertInfo, setAlertInfo] = useState({ show: false, title: "", message: "", type: "info" });
   const [showConfirmClockOut, setShowConfirmClockOut] = useState(false);
+  const [clockOutConfirmMsg, setClockOutConfirmMsg] = useState("");
 
   const showAlert = (message, title = "Notice", type = "warning") => {
     setAlertInfo({ show: true, title, message, type });
@@ -80,12 +86,16 @@ export default function EmployeeDashboard() {
     }
   }, []);
 
-  // Fetch Assigned Tasks & Leaves
+  // Fetch Assigned Tasks & Leaves dynamically
   const fetchEmployeeData = useCallback(async () => {
     setLoading(true);
     try {
+      const taskEndpoint = selectedProject?._id || selectedProject?.id
+        ? `/tasks?project=${selectedProject._id || selectedProject.id}`
+        : "/tasks";
+
       const [tasksRes, leaveRes] = await Promise.allSettled([
-        API.get("/tasks"),
+        API.get(taskEndpoint),
         API.get("/leave/balance"),
       ]);
 
@@ -94,21 +104,73 @@ export default function EmployeeDashboard() {
           ? tasksRes.value.data
           : tasksRes.value.data?.tasks || [];
 
-        // Filter tasks assigned to current logged-in user
-        const currentUserId = user?._id || user?.id;
+        // Robust, dynamic filter for tasks assigned to current logged-in user
+        const currentUserId = String(user?._id || user?.id || "");
+        const currentUserEmail = (user?.email || "").toLowerCase().trim();
+
         const myTasks = rawTasks.filter((t) => {
-          const assignedId = typeof t.assignedTo === "object" ? t.assignedTo?._id : t.assignedTo;
-          return assignedId && String(assignedId) === String(currentUserId);
+          if (!currentUserId && !currentUserEmail) return false;
+
+          // 1. Check t.assignedTo as array of objects or strings (formatTask output)
+          if (Array.isArray(t.assignedTo)) {
+            const hasMatch = t.assignedTo.some((item) => {
+              if (!item) return false;
+              if (typeof item === "string") return String(item) === currentUserId;
+              const itemId = String(item._id || item.id || "");
+              const itemEmail = (item.email || "").toLowerCase().trim();
+              return (itemId && itemId === currentUserId) || (itemEmail && currentUserEmail && itemEmail === currentUserEmail);
+            });
+            if (hasMatch) return true;
+          }
+
+          // 2. Check t.assignedTo as single object
+          if (typeof t.assignedTo === "object" && t.assignedTo !== null && !Array.isArray(t.assignedTo)) {
+            const assignedId = String(t.assignedTo._id || t.assignedTo.id || "");
+            const assignedEmail = (t.assignedTo.email || "").toLowerCase().trim();
+            if (assignedId && assignedId === currentUserId) return true;
+            if (assignedEmail && currentUserEmail && assignedEmail === currentUserEmail) return true;
+          }
+
+          // 3. Check t.assignedTo as direct string
+          if (typeof t.assignedTo === "string" && String(t.assignedTo) === currentUserId) {
+            return true;
+          }
+
+          // 4. Check t.assigned_to (raw MySQL column fallback)
+          if (t.assigned_to) {
+            if (String(t.assigned_to) === currentUserId) return true;
+            if (typeof t.assigned_to === "object") {
+              const aId = String(t.assigned_to._id || t.assigned_to.id || "");
+              const aEmail = (t.assigned_to.email || "").toLowerCase().trim();
+              if (aId && aId === currentUserId) return true;
+              if (aEmail && currentUserEmail && aEmail === currentUserEmail) return true;
+            }
+          }
+
+          // 5. Check subtasks assigned to this employee
+          if (Array.isArray(t.subtasks) && t.subtasks.length > 0) {
+            const hasSubMatch = t.subtasks.some((sub) => {
+              const subUser = sub.assignedTo || sub.assigned_to;
+              if (!subUser) return false;
+              if (typeof subUser === "string") return String(subUser) === currentUserId;
+              const subId = String(subUser._id || subUser.id || "");
+              const subEmail = (subUser.email || "").toLowerCase().trim();
+              return (subId && subId === currentUserId) || (subEmail && currentUserEmail && subEmail === currentUserEmail);
+            });
+            if (hasSubMatch) return true;
+          }
+
+          return false;
         });
 
         const inProg = myTasks.filter((t) => {
           const s = (t.status?.name || t.status || "").toLowerCase();
-          return s.includes("progress") || s.includes("review") || s.includes("doing");
+          return s.includes("progress") || s.includes("review") || s.includes("doing") || s.includes("dev");
         }).length;
 
         const done = myTasks.filter((t) => {
           const s = (t.status?.name || t.status || "").toLowerCase();
-          return s.includes("done") || s.includes("complete") || s.includes("stable");
+          return s.includes("done") || s.includes("complete") || s.includes("stable") || s.includes("finished");
         }).length;
 
         const high = myTasks.filter(
@@ -132,12 +194,12 @@ export default function EmployeeDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, selectedProject]);
 
   useEffect(() => {
     fetchTodayAttendance();
     fetchEmployeeData();
-  }, [fetchTodayAttendance, fetchEmployeeData]);
+  }, [fetchTodayAttendance, fetchEmployeeData, selectedProject]);
 
   // Live Timer for clocked-in employee
   useEffect(() => {
@@ -154,8 +216,17 @@ export default function EmployeeDashboard() {
       };
       updateTimer();
       interval = setInterval(updateTimer, 1000);
-    } else if (attendance?.clock_out && attendance?.total_hours) {
-      setElapsedTime(`${Number(attendance.total_hours).toFixed(2)} hrs`);
+    } else if (attendance?.clock_out && attendance?.total_hours !== undefined && attendance?.total_hours !== null) {
+      const totalMins = Math.round(Number(attendance.total_hours) * 60);
+      const h = Math.floor(totalMins / 60);
+      const m = totalMins % 60;
+      if (h === 0) {
+        setElapsedTime(`${m} mins`);
+      } else if (m === 0) {
+        setElapsedTime(`${h} hrs`);
+      } else {
+        setElapsedTime(`${h} hrs ${m} mins`);
+      }
     } else {
       setElapsedTime("00:00:00");
     }
@@ -187,6 +258,9 @@ export default function EmployeeDashboard() {
       const res = await API.post("/attendance/clock-in", { workMode });
       setAttendance(res.data.attendance);
       setLeaveNotice(null);
+      if (res.data?.leaveNotice) {
+        showAlert(res.data.leaveNotice, "You Are On Leave Today", "warning");
+      }
     } catch (err) {
       const errMsg = err.response?.data?.error || "Clock In Failed";
       if (err.response?.data?.requireLeaveDate) {
@@ -194,8 +268,35 @@ export default function EmployeeDashboard() {
           date: err.response.data.requireLeaveDate,
           message: errMsg
         });
+        showAlert(errMsg, "Leave Required To Clock In", "warning");
+      } else {
+        showAlert(errMsg, "Clock In Restricted", "danger");
       }
-      showAlert(errMsg, "Leave Required To Clock In", "warning");
+    } finally {
+      setAttLoading(false);
+    }
+  };
+
+  const handleClockOut = async () => {
+    try {
+      setAttLoading(true);
+      const res = await API.get("/attendance/today");
+      const rem = res.data?.remainingShiftMinutes || 0;
+      let msg = "Are you sure you want to end your shift for today?";
+      if (rem > 0) {
+        const h = Math.floor(rem / 60);
+        const m = Math.round(rem % 60);
+        const timeStr = h > 0 ? `${h} hrs ${m} mins` : `${m} mins`;
+        msg = `You still have ${timeStr} left in your shift. If you Clock Out now, it will be counted as a Half Day / Leave. Are you sure you want to Clock Out?`;
+      } else {
+        msg = "Are you sure you want to end your shift for today? Make sure your daily tasks and timesheet are complete.";
+      }
+      setClockOutConfirmMsg(msg);
+      setShowConfirmClockOut(true);
+    } catch (err) {
+      console.error(err);
+      setClockOutConfirmMsg("Are you sure you want to end your shift for today?");
+      setShowConfirmClockOut(true);
     } finally {
       setAttLoading(false);
     }
@@ -229,7 +330,8 @@ export default function EmployeeDashboard() {
 
   return (
     <div style={{ padding: "0 0 32px 0", maxWidth: "1400px", margin: "0 auto" }}>
-      {/* ⚠️ REQUIRED LEAVE NOTICE BANNER (IF MISSED CLOCK OUT) */}
+      <ForgotPunchOutAlert />
+      {/* REQUIRED LEAVE NOTICE BANNER (IF MISSED CLOCK OUT) */}
       {leaveNotice && (
         <div style={{
           background: "rgba(245, 158, 11, 0.12)",
@@ -244,14 +346,23 @@ export default function EmployeeDashboard() {
           gap: "12px"
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <span style={{ fontSize: "22px" }}>⚠️</span>
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "36px", height: "36px", borderRadius: "10px", background: "rgba(245, 158, 11, 0.15)", color: "#d97706" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </span>
             <div>
               <strong style={{ color: "#d97706", fontSize: "14px", display: "block" }}>Action Required Before Clock In</strong>
               <span style={{ color: "var(--text-main, #1e293b)", fontSize: "13px" }}>{leaveNotice.message}</span>
             </div>
           </div>
           <button
-            onClick={() => navigate(`/leave?date=${leaveNotice.date}&type=Second Half`)}
+            onClick={() => {
+              const leaveType = leaveNotice.type || (leaveNotice.message?.includes("Second Half") ? "Second Half" : "Full Day");
+              navigate(`/leave?date=${leaveNotice.date}&type=${encodeURIComponent(leaveType)}`);
+            }}
             style={{
               background: "#d97706",
               color: "#fff",
@@ -263,12 +374,12 @@ export default function EmployeeDashboard() {
               cursor: "pointer"
             }}
           >
-            Apply Second Half Leave →
+            Apply Leave Now →
           </button>
         </div>
       )}
 
-      {/* 🚀 WELCOME & REAL-TIME SHIFT HERO */}
+      {/* WELCOME & REAL-TIME SHIFT HERO */}
       <div
         style={{
           background: "linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98))",
@@ -317,7 +428,7 @@ export default function EmployeeDashboard() {
           </p>
         </div>
 
-        {/* ⏱️ SHIFT / CLOCK IN CONTROLLER */}
+        {/* SHIFT / CLOCK IN CONTROLLER */}
         <div
           style={{
             position: "relative",
@@ -379,7 +490,7 @@ export default function EmployeeDashboard() {
                   }}
                   title={scheduleInfo.excessBreakBreakdown?.join("; ") || `+${scheduleInfo.excessBreakMinutes}m excess break`}
                 >
-                  ⏳ +{scheduleInfo.excessBreakMinutes}m Excess Break (Shift: {Math.floor(scheduleInfo.requiredShiftMinutes / 60)}h {scheduleInfo.requiredShiftMinutes % 60}m)
+                  <ClockIcon size={12} color="#b45309" style={{ marginRight: 4 }} />+{scheduleInfo.excessBreakMinutes}m Excess Break (Shift: {Math.floor(scheduleInfo.requiredShiftMinutes / 60)}h {scheduleInfo.requiredShiftMinutes % 60}m)
                 </span>
               )}
               {lateInstances && (
@@ -415,7 +526,16 @@ export default function EmployeeDashboard() {
                       : `Used ${lateInstances.used} of ${lateInstances.limit} allowed monthly late instances. Grace period is ${lateInstances.grace_minutes} mins.`
                   }
                 >
-                  {lateInstances.is_exhausted ? "🚨" : lateInstances.used > 0 ? "⚠️" : "🔔"} Late Instances: {lateInstances.used}/{lateInstances.limit} Used ({lateInstances.remaining} Left)
+                  <span style={{ display: "inline-flex", alignItems: "center", marginRight: "6px" }}>
+                    {lateInstances.is_exhausted ? (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                    ) : lateInstances.used > 0 ? (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                    ) : (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+                    )}
+                  </span>
+                  Late Instances: {lateInstances.used}/{lateInstances.limit} Used ({lateInstances.remaining} Left)
                 </span>
               )}
             </div>
@@ -493,7 +613,7 @@ export default function EmployeeDashboard() {
                   <span style={{ fontSize: "11px", color: "#f87171", fontWeight: "600" }}>Admin Clock-Out Only</span>
                 ) : (
                   <button
-                    onClick={() => setShowConfirmClockOut(true)}
+                    onClick={handleClockOut}
                     disabled={attLoading}
                     style={{
                       background: "linear-gradient(135deg, #dc2626, #ef4444)",
@@ -536,7 +656,7 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
-      {/* 📊 KPI METRIC CARDS */}
+      {/* KPI METRIC CARDS */}
       <div
         style={{
           display: "grid",
@@ -583,7 +703,7 @@ export default function EmployeeDashboard() {
         />
       </div>
 
-      {/* 📋 WORKSPACE SPLIT: MY ACTIVE TASKS & LEAVE BALANCES */}
+      {/* WORKSPACE SPLIT: MY ACTIVE TASKS & LEAVE BALANCES */}
       <div
         style={{
           display: "grid",
@@ -755,6 +875,10 @@ export default function EmployeeDashboard() {
           </div>
 
           {/* QUICK WORKDAY SHORTCUTS */}
+          {/* TEAM CELEBRATIONS WIDGET */}
+          <CelebrationsWidget />
+
+          {/* PRODUCTIVITY SHORTCUTS */}
           <div
             style={{
               background: "var(--ui-surface, #ffffff)",
@@ -767,6 +891,7 @@ export default function EmployeeDashboard() {
             <h3 style={{ margin: "0 0 16px 0", fontSize: "15px", fontWeight: "800", color: "var(--text-main, #1e293b)" }}>
               Productivity Shortcuts
             </h3>
+
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "12px" }}>
               <ShortcutCard label="Raise Ticket" icon={<TicketIcon size={20} color="#6366f1" />} onClick={() => navigate("/tickets")} />
               <ShortcutCard label="My Timesheets" icon={<SheetIcon size={20} color="#3b82f6" />} onClick={() => navigate("/timesheet")} />
@@ -790,7 +915,7 @@ export default function EmployeeDashboard() {
       <ConfirmModal
         show={showConfirmClockOut}
         title="Confirm Clock Out"
-        message="Are you sure you want to end your shift for today?"
+        message={clockOutConfirmMsg || "Are you sure you want to end your shift for today?"}
         confirmText="Yes, Clock Out"
         confirmColor="#dc2626"
         onConfirm={confirmClockOut}

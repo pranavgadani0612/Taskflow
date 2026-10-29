@@ -4,9 +4,11 @@ import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import PageHeader from "../components/common/PageHeader";
 import DataTable from "../components/common/DataTable";
+import Pagination from "../components/common/Pagination";
 import FormModal from "../components/common/FormModal";
+import ConfirmModal from "../components/common/ConfirmModal";
 import { SelectField, TextInput } from "../components/common/FormFields";
-import { CoffeeIcon, ClockIcon, PlayIcon, StopIcon, TrashIcon, EditIcon, CheckIcon } from "../components/common/Icons";
+import { CoffeeIcon, ClockIcon, PlayIcon, StopIcon, TrashIcon, EditIcon, CheckIcon, ZapIcon } from "../components/common/Icons";
 import "../style/main.css";
 import "../style/table.css";
 
@@ -18,11 +20,36 @@ export default function BreakManagement() {
   const isCompanyOwner = user?.role?.name === "Company Owner";
   const isAdminOrOwner = isSuperAdmin || isCompanyOwner || user?.role?.name?.toLowerCase().includes("admin");
 
+  const [confirmConfig, setConfirmConfig] = useState({
+    show: false,
+    title: "Confirmation",
+    message: "",
+    onConfirm: () => {},
+    confirmText: "Confirm",
+    confirmColor: "var(--danger-color)"
+  });
+
+  const askConfirm = (title, message, onConfirm, confirmText = "Delete", confirmColor = "var(--danger-color)") => {
+    setConfirmConfig({
+      show: true,
+      title,
+      message,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, show: false }));
+        await onConfirm();
+      },
+      confirmText,
+      confirmColor
+    });
+  };
+
   // Active view tab for Admin
   const [activeTab, setActiveTab] = useState("mybreaks"); // "mybreaks" | "monitoring" | "configure"
 
   // Employee My Breaks Date Filter
   const [myBreakDate, setMyBreakDate] = useState(new Date().toISOString().slice(0, 10));
+  const [myBreaksPage, setMyBreaksPage] = useState(1);
+  const myBreaksPageSize = 10;
 
   // Break Status State
   const [breakStatus, setBreakStatus] = useState({
@@ -63,6 +90,7 @@ export default function BreakManagement() {
   // Admin Configure Break Type Modal
   const [showTypeModal, setShowTypeModal] = useState(false);
   const [editTypeId, setEditTypeId] = useState(null);
+  const [typeFieldErrors, setTypeFieldErrors] = useState({});
   const [typeForm, setTypeForm] = useState({
     name: "",
     duration_minutes: 15,
@@ -96,6 +124,13 @@ export default function BreakManagement() {
     const endH = Math.floor(totalMins / 60) % 24;
     const endM = totalMins % 60;
     return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+  };
+  // Helper: Check if current time is within break type window
+  const isWithinWindow = (windowStart, windowEnd) => {
+    if (!windowStart || !windowEnd) return true;
+    const nowIST = new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour12: false });
+    const currentHHMM = nowIST.slice(0, 5);
+    return currentHHMM >= windowStart && currentHHMM <= windowEnd;
   };
 
   // Handlers for dynamic auto-calculation in break policy modal
@@ -227,31 +262,37 @@ export default function BreakManagement() {
   };
 
   // Employee: End Break
-  const handleEndBreak = async () => {
-    try {
-      setActionLoading(true);
-      const res = await API.post("/breaks/end");
-      showToast(`Break completed! Duration: ${res.data.durationMinutes} minutes`);
-      fetchMyBreakStatus();
-      if (isAdminOrOwner) fetchAllBreaks();
-    } catch (err) {
-      showToast(err.response?.data?.error || "Failed to end break", "error");
-    } finally {
-      setActionLoading(false);
-    }
+  const handleEndBreak = () => {
+    askConfirm(
+      "End Break Confirmation",
+      "Are you sure you want to end your current break and resume work?",
+      async () => {
+        try {
+          setActionLoading(true);
+          const res = await API.post("/breaks/end");
+          setBreakStatus((prev) => ({
+            ...prev,
+            isOnBreak: false,
+            activeBreak: null,
+          }));
+          setElapsedSeconds(0);
+          showToast(`Break completed! Duration: ${res.data.durationMinutes} minutes`);
+          await fetchMyBreakStatus();
+          if (isAdminOrOwner) fetchAllBreaks();
+        } catch (err) {
+          showToast(err.response?.data?.error || "Failed to end break", "error");
+        } finally {
+          setActionLoading(false);
+        }
+      },
+      "End Break",
+      "#dc2626"
+    );
   };
 
   // Admin: Save or Update Break Type
   const handleSaveBreakType = async () => {
-    if (!typeForm.name.trim()) {
-      showToast("Break Name is required", "error");
-      return;
-    }
-    if (!typeForm.duration_minutes || typeForm.duration_minutes < 1) {
-      showToast("Duration must be at least 1 minute", "error");
-      return;
-    }
-
+    setTypeFieldErrors({});
     try {
       setActionLoading(true);
       if (editTypeId) {
@@ -263,10 +304,17 @@ export default function BreakManagement() {
       }
       setShowTypeModal(false);
       setEditTypeId(null);
+      setTypeFieldErrors({});
       setTypeForm({ name: "", duration_minutes: 15, window_start: "10:00", window_end: "11:00" });
       fetchBreakTypes();
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || "Failed to save break type";
+      if (errMsg.toLowerCase().includes("break name") || errMsg.toLowerCase().includes("name")) {
+        setTypeFieldErrors(prev => ({ ...prev, name: "Plese enter break name" }));
+      }
+      if (errMsg.toLowerCase().includes("duration")) {
+        setTypeFieldErrors(prev => ({ ...prev, duration_minutes: "Plese enter duration" }));
+      }
       showToast(errMsg, "error");
     } finally {
       setActionLoading(false);
@@ -274,41 +322,106 @@ export default function BreakManagement() {
   };
 
   // Admin: Delete Break Type
-  const handleDeleteBreakType = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this break type?")) return;
-    try {
-      await API.delete(`/breaks/types/${id}`);
-      showToast("Break type removed.");
-      fetchBreakTypes();
-    } catch (err) {
-      showToast(err.response?.data?.error || "Delete failed", "error");
-    }
+  const handleDeleteBreakType = (id) => {
+    askConfirm("Delete Break Type", "Are you sure you want to delete this break type?", async () => {
+      try {
+        await API.delete(`/breaks/types/${id}`);
+        showToast("Break type removed.");
+        fetchBreakTypes();
+      } catch (err) {
+        showToast(err.response?.data?.error || "Delete failed", "error");
+      }
+    });
   };
 
   // Admin: Force End an Employee's Break
-  const handleForceEnd = async (id, empName) => {
-    if (!window.confirm(`Force end break for ${empName}?`)) return;
-    try {
-      await API.put(`/breaks/${id}/force-end`);
-      showToast("Break ended by admin.");
-      fetchAllBreaks();
-      fetchMyBreakStatus();
-    } catch (err) {
-      showToast(err.response?.data?.error || "Failed to close break", "error");
-    }
+  const handleForceEnd = (id, empName) => {
+    askConfirm("Force End Break", `Force end break for ${empName}?`, async () => {
+      try {
+        await API.put(`/breaks/${id}/force-end`);
+        showToast("Break ended by admin.");
+        fetchAllBreaks();
+        fetchMyBreakStatus();
+      } catch (err) {
+        showToast(err.response?.data?.error || "Failed to close break", "error");
+      }
+    }, "End Break", "var(--primary-color)");
+  };
+
+  // Helpers for formatting Date/Time inputs
+  const extractTimeHM = (dateVal) => {
+    if (!dateVal) return "";
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const extractDateYMD = (dateVal) => {
+    if (!dateVal) return "";
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   };
 
   // Admin: Open Edit Break Log Modal
   const handleOpenEditBreak = (breakItem) => {
     setEditingBreak(breakItem);
+    const dateStr = extractDateYMD(breakItem.date || breakItem.start_time);
+    const startStr = extractTimeHM(breakItem.start_time);
+    const endStr = extractTimeHM(breakItem.end_time);
+
+    let initialDuration = breakItem.duration_minutes || 0;
+    if (!initialDuration && startStr && endStr) {
+      const [sh, sm] = startStr.split(":").map(Number);
+      const [eh, em] = endStr.split(":").map(Number);
+      let diff = (eh * 60 + em) - (sh * 60 + sm);
+      if (diff < 0) diff += 24 * 60;
+      initialDuration = diff;
+    }
+
     setEditBreakForm({
       reason: breakItem.reason || "",
-      duration_minutes: breakItem.duration_minutes || 0,
+      date: dateStr,
+      start_time: startStr,
+      end_time: endStr,
+      duration_minutes: initialDuration,
       status: breakItem.status || "Completed",
-      start_time: breakItem.start_time ? new Date(breakItem.start_time).toISOString().slice(0, 16) : "",
-      end_time: breakItem.end_time ? new Date(breakItem.end_time).toISOString().slice(0, 16) : "",
     });
     setShowEditBreakModal(true);
+  };
+
+  // Handle Start Time or End Time Change -> Auto-calc Duration
+  const handleEditTimeChange = (field, newTime) => {
+    setEditBreakForm((prev) => {
+      const updated = { ...prev, [field]: newTime };
+      if (updated.start_time && updated.end_time) {
+        const [sh, sm] = updated.start_time.split(":").map(Number);
+        const [eh, em] = updated.end_time.split(":").map(Number);
+        let diffMins = (eh * 60 + em) - (sh * 60 + sm);
+        if (diffMins < 0) diffMins += 24 * 60;
+        updated.duration_minutes = diffMins;
+      }
+      return updated;
+    });
+  };
+
+  // Handle Duration Change -> Auto-adjust End Time
+  const handleEditDurationChange = (val) => {
+    const mins = Math.max(0, parseInt(val, 10) || 0);
+    setEditBreakForm((prev) => {
+      const updated = { ...prev, duration_minutes: mins };
+      if (updated.start_time && mins > 0) {
+        const [sh, sm] = updated.start_time.split(":").map(Number);
+        const totalMins = sh * 60 + sm + mins;
+        const endH = Math.floor(totalMins / 60) % 24;
+        const endM = totalMins % 60;
+        const pad = (n) => String(n).padStart(2, "0");
+        updated.end_time = `${pad(endH)}:${pad(endM)}`;
+      }
+      return updated;
+    });
   };
 
   // Admin: Save Edited Break Log
@@ -316,7 +429,17 @@ export default function BreakManagement() {
     if (!editingBreak) return;
     try {
       setActionLoading(true);
-      await API.put(`/breaks/${editingBreak.id}`, editBreakForm);
+      const targetDate = editBreakForm.date || new Date().toISOString().slice(0, 10);
+      const payload = {
+        reason: editBreakForm.reason,
+        status: editBreakForm.status,
+        duration_minutes: editBreakForm.duration_minutes,
+        date: targetDate,
+        start_time: editBreakForm.start_time ? `${targetDate} ${editBreakForm.start_time}:00` : null,
+        end_time: editBreakForm.end_time ? `${targetDate} ${editBreakForm.end_time}:00` : null,
+      };
+
+      await API.put(`/breaks/${editingBreak.id}`, payload);
       showToast("Break record updated successfully!");
       setShowEditBreakModal(false);
       setEditingBreak(null);
@@ -330,19 +453,20 @@ export default function BreakManagement() {
   };
 
   // Admin: Delete Break Log
-  const handleDeleteBreakLog = async (id, empName) => {
-    if (!window.confirm(`Are you sure you want to delete this break record for ${empName || "this employee"}?`)) return;
-    try {
-      setActionLoading(true);
-      await API.delete(`/breaks/${id}`);
-      showToast("Break record deleted successfully.");
-      fetchAllBreaks();
-      fetchMyBreakStatus();
-    } catch (err) {
-      showToast(err.response?.data?.error || "Failed to delete break record", "error");
-    } finally {
-      setActionLoading(false);
-    }
+  const handleDeleteBreakLog = (id, empName) => {
+    askConfirm("Delete Break Record", `Are you sure you want to delete this break record for ${empName || "this employee"}?`, async () => {
+      try {
+        setActionLoading(true);
+        await API.delete(`/breaks/${id}`);
+        showToast("Break record deleted successfully.");
+        fetchAllBreaks();
+        fetchMyBreakStatus();
+      } catch (err) {
+        showToast(err.response?.data?.error || "Failed to delete break record", "error");
+      } finally {
+        setActionLoading(false);
+      }
+    });
   };
 
   // Format Elapsed Time
@@ -518,15 +642,17 @@ export default function BreakManagement() {
       <div
         style={{
           background: breakStatus.isOnBreak
-            ? "linear-gradient(135deg, #fffbeb, #fef3c7)"
+            ? "rgba(245, 158, 11, 0.1)"
             : "var(--card-bg, #ffffff)",
           border: breakStatus.isOnBreak
-            ? "1px solid #fde68a"
+            ? "1.5px solid rgba(245, 158, 11, 0.4)"
             : "1px solid var(--border-color, #e5e7eb)",
           borderRadius: "16px",
           padding: "24px",
           marginBottom: "28px",
-          boxShadow: "0 6px 20px rgba(0,0,0,0.04)",
+          boxShadow: breakStatus.isOnBreak
+            ? "0 6px 20px rgba(245, 158, 11, 0.15)"
+            : "0 6px 20px rgba(0,0,0,0.04)",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -553,12 +679,12 @@ export default function BreakManagement() {
             <CoffeeIcon size={24} color="#fff" />
           </div>
           <div>
-            <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-muted)" }}>
+            <div style={{ fontSize: "12px", fontWeight: "700", color: breakStatus.isOnBreak ? "#f59e0b" : "var(--text-muted)", letterSpacing: "0.5px" }}>
               CURRENT BREAK STATUS
             </div>
             <div style={{ fontSize: "20px", fontWeight: "800", color: "var(--text-main)", marginTop: "2px" }}>
               {breakStatus.isOnBreak ? (
-                <span style={{ color: "#d97706" }}>
+                <span style={{ color: "#f59e0b" }}>
                   On Break: {breakStatus.activeBreak?.reason || "Break"}
                 </span>
               ) : (
@@ -568,9 +694,9 @@ export default function BreakManagement() {
               )}
             </div>
             {breakStatus.isOnBreak && (
-              <div style={{ fontSize: "13px", color: "#92400e", marginTop: "4px" }}>
+              <div style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>
                 Started at:{" "}
-                <strong>
+                <strong style={{ color: "var(--text-main)" }}>
                   {new Date(breakStatus.activeBreak.start_time).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit"
@@ -585,10 +711,10 @@ export default function BreakManagement() {
         <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
           {breakStatus.isOnBreak ? (
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: "12px", fontWeight: "700", color: "#b45309", letterSpacing: "0.5px" }}>
+              <div style={{ fontSize: "12px", fontWeight: "700", color: "#f59e0b", letterSpacing: "0.5px" }}>
                 TIME ELAPSED
               </div>
-              <div style={{ fontSize: "28px", fontWeight: "900", color: "#b45309", fontFamily: "monospace" }}>
+              <div style={{ fontSize: "28px", fontWeight: "900", color: "#f59e0b", fontFamily: "monospace" }}>
                 {formatTimer(elapsedSeconds)}
               </div>
             </div>
@@ -657,11 +783,11 @@ export default function BreakManagement() {
                 <div
                   key={type.id}
                   style={{
-                    background: isCurrentActiveBreak ? "linear-gradient(135deg, #fffbeb, #fef3c7)" : "var(--card-bg, #fff)",
+                    background: isCurrentActiveBreak ? "rgba(245, 158, 11, 0.1)" : "var(--card-bg, #fff)",
                     borderRadius: "14px",
                     padding: "20px",
                     border: isCurrentActiveBreak ? "2px solid #f59e0b" : "1px solid var(--border-color, #e5e7eb)",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
+                    boxShadow: isCurrentActiveBreak ? "0 4px 18px rgba(245, 158, 11, 0.2)" : "0 4px 12px rgba(0,0,0,0.03)",
                     display: "flex",
                     flexDirection: "column",
                     gap: "12px"
@@ -674,12 +800,12 @@ export default function BreakManagement() {
                           width: "32px",
                           height: "32px",
                           borderRadius: "8px",
-                          background: isCurrentActiveBreak ? "rgba(245, 158, 11, 0.2)" : "rgba(99, 102, 241, 0.1)",
+                          background: isCurrentActiveBreak ? "rgba(245, 158, 11, 0.25)" : "rgba(99, 102, 241, 0.1)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center"
                         }}>
-                          <CoffeeIcon size={16} color={isCurrentActiveBreak ? "#d97706" : "#6366f1"} />
+                          <CoffeeIcon size={16} color={isCurrentActiveBreak ? "#f59e0b" : "#6366f1"} />
                         </div>
                         {type.name}
                       </h4>
@@ -690,8 +816,8 @@ export default function BreakManagement() {
                     </div>
                     <span
                       style={{
-                        background: isCurrentActiveBreak ? "#fef3c7" : "rgba(99, 102, 241, 0.1)",
-                        color: isCurrentActiveBreak ? "#b45309" : "#6366f1",
+                        background: isCurrentActiveBreak ? "rgba(245, 158, 11, 0.2)" : "rgba(99, 102, 241, 0.1)",
+                        color: isCurrentActiveBreak ? "#f59e0b" : "#6366f1",
                         padding: "5px 12px",
                         borderRadius: "20px",
                         fontWeight: "700",
@@ -782,11 +908,10 @@ export default function BreakManagement() {
                           alignItems: "center",
                           justifyContent: "center",
                           gap: "6px",
-                          boxShadow: "0 3px 10px rgba(99, 102, 241, 0.25)",
-                          transition: "0.2s"
+                          boxShadow: "0 3px 10px rgba(99, 102, 241, 0.25)"
                         }}
                       >
-                        <PlayIcon size={13} color="#fff" /> Start {type.name}
+                        <PlayIcon size={14} color="#fff" /> Start {type.name}
                       </button>
                     )}
                   </div>
@@ -928,7 +1053,9 @@ export default function BreakManagement() {
                   </tr>
                 </thead>
                 <tbody>
-                  {breakStatus.todayBreaks.map((b) => (
+                  {(breakStatus.todayBreaks || [])
+                    .slice((myBreaksPage - 1) * myBreaksPageSize, myBreaksPage * myBreaksPageSize)
+                    .map((b) => (
                     <tr key={b.id} style={{ borderBottom: "1px solid var(--border-color, #f1f5f9)" }}>
                       <td style={{ padding: "14px 18px", fontWeight: "600", color: "var(--text-main)" }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
@@ -967,6 +1094,12 @@ export default function BreakManagement() {
                 </tbody>
               </table>
               </div>
+              <Pagination
+                currentPage={myBreaksPage}
+                totalRecords={(breakStatus.todayBreaks || []).length}
+                pageSize={myBreaksPageSize}
+                onPageChange={setMyBreaksPage}
+              />
             </div>
           )}
         </div>
@@ -1220,24 +1353,30 @@ export default function BreakManagement() {
         onSave={handleSaveBreakType}
         saveText={actionLoading ? "Saving..." : "Save Policy"}
       >
-        <form onSubmit={(e) => { e.preventDefault(); handleSaveBreakType(); }}>
+        <form noValidate onSubmit={(e) => { e.preventDefault(); handleSaveBreakType(); }}>
           <TextInput
             label="Break Name"
             placeholder="e.g. Tea Break, Lunch Break, Smoke Break"
             value={typeForm.name}
-            onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })}
+            onChange={(e) => {
+              setTypeForm({ ...typeForm, name: e.target.value });
+              if (typeFieldErrors.name) setTypeFieldErrors(prev => ({ ...prev, name: null }));
+            }}
             required
+            error={typeFieldErrors.name}
           />
 
           <TextInput
             label="Duration Limit (Minutes)"
             type="number"
-            min="1"
-            max="180"
             placeholder="e.g. 15, 30, 45"
             value={typeForm.duration_minutes}
-            onChange={(e) => handleDurationChange(e.target.value)}
+            onChange={(e) => {
+              handleDurationChange(e.target.value);
+              if (typeFieldErrors.duration_minutes) setTypeFieldErrors(prev => ({ ...prev, duration_minutes: null }));
+            }}
             required
+            error={typeFieldErrors.duration_minutes}
           />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" }}>
@@ -1342,37 +1481,17 @@ export default function BreakManagement() {
             />
           </div>
 
-          <div>
-            <label style={{ display: "block", fontSize: "13px", fontWeight: "600", marginBottom: "6px", color: "var(--text-main)" }}>
-              Break Type / Reason
-            </label>
-            <input
-              type="text"
-              value={editBreakForm.reason}
-              onChange={(e) => setEditBreakForm({ ...editBreakForm, reason: e.target.value })}
-              required
-              style={{
-                width: "100%",
-                padding: "8px 12px",
-                borderRadius: "8px",
-                border: "1px solid var(--border-color, #d1d5db)",
-                background: "var(--input-bg, #fff)",
-                color: "var(--text-main)",
-                fontSize: "14px"
-              }}
-            />
-          </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <div>
               <label style={{ display: "block", fontSize: "13px", fontWeight: "600", marginBottom: "6px", color: "var(--text-main)" }}>
-                Duration (minutes)
+                Break Type / Reason
               </label>
               <input
-                type="number"
-                min="0"
-                value={editBreakForm.duration_minutes}
-                onChange={(e) => setEditBreakForm({ ...editBreakForm, duration_minutes: parseInt(e.target.value, 10) || 0 })}
+                type="text"
+                value={editBreakForm.reason}
+                onChange={(e) => setEditBreakForm({ ...editBreakForm, reason: e.target.value })}
+                required
+                placeholder="e.g. Lunch Break"
                 style={{
                   width: "100%",
                   padding: "8px 12px",
@@ -1381,6 +1500,94 @@ export default function BreakManagement() {
                   background: "var(--input-bg, #fff)",
                   color: "var(--text-main)",
                   fontSize: "14px"
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: "600", marginBottom: "6px", color: "var(--text-main)" }}>
+                Break Date
+              </label>
+              <input
+                type="date"
+                value={editBreakForm.date}
+                onChange={(e) => setEditBreakForm({ ...editBreakForm, date: e.target.value })}
+                required
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border-color, #d1d5db)",
+                  background: "var(--input-bg, #fff)",
+                  color: "var(--text-main)",
+                  fontSize: "14px"
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: "600", marginBottom: "6px", color: "var(--text-main)" }}>
+                Start Time
+              </label>
+              <input
+                type="time"
+                value={editBreakForm.start_time}
+                onChange={(e) => handleEditTimeChange("start_time", e.target.value)}
+                required
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border-color, #d1d5db)",
+                  background: "var(--input-bg, #fff)",
+                  color: "var(--text-main)",
+                  fontSize: "14px",
+                  fontWeight: "600"
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: "600", marginBottom: "6px", color: "var(--text-main)" }}>
+                End Time
+              </label>
+              <input
+                type="time"
+                value={editBreakForm.end_time}
+                onChange={(e) => handleEditTimeChange("end_time", e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border-color, #d1d5db)",
+                  background: "var(--input-bg, #fff)",
+                  color: "var(--text-main)",
+                  fontSize: "14px",
+                  fontWeight: "600"
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: "600", marginBottom: "6px", color: "var(--text-main)" }}>
+                Duration (minutes) <span style={{ fontSize: "11px", fontWeight: "normal", color: "#64748b" }}>(Auto-calculated)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={editBreakForm.duration_minutes}
+                onChange={(e) => handleEditDurationChange(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border-color, #d1d5db)",
+                  background: "var(--input-bg, #fff)",
+                  color: "var(--text-main)",
+                  fontSize: "14px",
+                  fontWeight: "700"
                 }}
               />
             </div>
@@ -1407,8 +1614,36 @@ export default function BreakManagement() {
               </select>
             </div>
           </div>
+
+          <div style={{
+            padding: "10px 14px",
+            background: "rgba(99, 102, 241, 0.08)",
+            border: "1px solid rgba(99, 102, 241, 0.25)",
+            borderRadius: "8px",
+            fontSize: "12.5px",
+            color: "var(--text-main)",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            lineHeight: "1.4"
+          }}>
+            <ZapIcon size={16} color="#6366f1" />
+            <span>
+              <strong>Smart Auto-Sync:</strong> Changing Start Time or End Time will automatically recalculate Duration in minutes. Adjusting Duration will automatically update End Time.
+            </span>
+          </div>
         </form>
       </FormModal>
+
+      <ConfirmModal
+        show={confirmConfig.show}
+        onClose={() => setConfirmConfig((prev) => ({ ...prev, show: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmText={confirmConfig.confirmText}
+        confirmColor={confirmConfig.confirmColor}
+      />
     </div>
   );
 }

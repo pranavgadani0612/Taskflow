@@ -459,8 +459,22 @@ export default function Chat() {
       // If message is for the active convo, append it
       if (msg.conversationId === activeConvoRef.current?._id) {
         setMessages((prev) => {
-          // Avoid duplicates
+          // If already in list by real ID, avoid duplicate
           if (prev.some((m) => m._id === msg._id)) return prev;
+
+          // If this message was sent by the current user, replace the temporary optimistic message
+          const currentUserId = user?._id || user?.id;
+          const msgSenderId = msg.sender?._id || msg.sender?.id || msg.senderId;
+          const optIndex = prev.findIndex(
+            (m) => m.optimistic && (msgSenderId === currentUserId || m.senderName === msg.senderName) && m.text === msg.text
+          );
+
+          if (optIndex !== -1) {
+            const updated = [...prev];
+            updated[optIndex] = msg;
+            return updated;
+          }
+
           return [...prev, msg];
         });
       } else {
@@ -526,10 +540,14 @@ export default function Chat() {
       // Join new room
       if (socket) socket.emit("join_conversation", convo._id);
 
-      // Clear unread count
+      // Clear unread count locally and broadcast to header
       setUnreadCounts((prev) => ({ ...prev, [convo._id]: 0 }));
+      window.dispatchEvent(new CustomEvent("chat_conversation_read", { detail: { conversationId: convo._id } }));
+      if (socket && (user?._id || user?.id)) {
+        socket.emit("mark_as_read", { conversationId: convo._id, userId: user._id || user.id });
+      }
 
-      // Load messages
+      // Load messages (this also automatically marks messages read in backend)
       setLoading(true);
       try {
         const res = await API.get(`/chat/conversations/${convo._id}/messages`);
@@ -651,9 +669,11 @@ export default function Chat() {
     return { name: other?.name || "?", image: other?.image };
   };
 
-  const filteredConvos = conversations.filter((c) =>
-    getConvoName(c).toLowerCase().includes(searchConvo.toLowerCase())
-  );
+  const filteredConvos = conversations.filter((c) => {
+    const trimmed = (searchConvo || "").trim().toLowerCase();
+    if (!trimmed || trimmed.length < 3) return true;
+    return getConvoName(c).toLowerCase().includes(trimmed);
+  });
 
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
 

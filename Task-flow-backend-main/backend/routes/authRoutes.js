@@ -70,6 +70,12 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Wrong password" });
     }
 
+    if (userRow.status && userRow.status.toLowerCase() === "inactive") {
+      return res.status(403).json({ 
+        error: "Your account has been deactivated by the Administrator. Please contact your administrator." 
+      });
+    }
+
     const user = formatUser(userRow);
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || "tasksecret", {
       expiresIn: "7d"
@@ -108,6 +114,11 @@ router.get("/me", async (req, res) => {
     );
 
     if (!rows || rows.length === 0) return res.status(401).json({ user: null, error: "User not found" });
+
+    if (rows[0].status && rows[0].status.toLowerCase() === "inactive") {
+      res.clearCookie("token", { httpOnly: true, sameSite: "none", secure: true });
+      return res.status(403).json({ user: null, error: "Account deactivated", inactive: true });
+    }
 
     const user = formatUser(rows[0]);
     res.json({ user, ...user });

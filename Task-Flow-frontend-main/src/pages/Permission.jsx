@@ -28,6 +28,7 @@ export default function Permission() {
     name: "",
     value: "",
   });
+  const [fieldErrors, setFieldErrors] = useState({});
 
   // Toast notification
   const showToast = (msg, type = "success") => {
@@ -57,12 +58,12 @@ export default function Permission() {
 
   // SAVE
   const save = async () => {
-    // Validation
-    const nameRegex = /^[a-zA-Z\s]+$/;
-    if (!form.name.trim()) {
-      showToast("Permission name is required", "error");
+    if (!form.name || !form.name.trim()) {
+      setFieldErrors({ name: "Plese enter permission name" });
       return;
     }
+    // Validation
+    const nameRegex = /^[a-zA-Z\s]+$/;
     if (form.name.length > 50) {
       showToast("Permission name must be 50 characters or less", "error");
       return;
@@ -73,6 +74,7 @@ export default function Permission() {
     }
 
     try {
+      setFieldErrors({});
       if (editId) {
         await API.put(`/permissions/${editId}`, form);
         showToast("Permission updated successfully!");
@@ -86,7 +88,13 @@ export default function Permission() {
       load();
     } catch (error) {
       console.error("Error saving permission:", error);
-      showToast("Error saving permission", "error");
+      const serverErr = error.response?.data?.error;
+      const serverField = error.response?.data?.field;
+      if (serverField) {
+        setFieldErrors({ [serverField]: serverErr });
+      } else {
+        showToast(serverErr || "Error saving permission", "error");
+      }
     }
   };
 
@@ -96,6 +104,7 @@ export default function Permission() {
       name: "",
       value: "",
     });
+    setFieldErrors({});
     setEditId(null);
   };
 
@@ -158,13 +167,16 @@ export default function Permission() {
         saveText={editId ? "Update" : "Save"}
       >
         <TextInput
-          label="Permission Name"
+          label="Permission Name *"
           type="text"
           placeholder="Enter permission name (e.g., User Create)"
           value={form.name}
-          onChange={handleNameChange}
+          onChange={(e) => {
+            handleNameChange(e);
+            if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: null }));
+          }}
           maxLength={50}
-          required
+          error={fieldErrors.name}
         />
 
         <TextInput

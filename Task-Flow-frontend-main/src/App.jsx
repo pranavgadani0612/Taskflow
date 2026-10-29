@@ -29,8 +29,21 @@ import Timesheet from "./pages/Timesheet";
 import Rating from "./pages/Rating";
 import BreakManagement from "./pages/BreakManagement";
 import Tickets from "./pages/Tickets";
+import TimeManager from "./pages/TimeManager";
+import Expenses from "./pages/Expenses";
+import NoticeBoard from "./pages/NoticeBoard";
+import HolidayCalendar from "./pages/HolidayCalendar";
+import WfhRequests from "./pages/WfhRequests";
+import EmployeeDirectory from "./pages/EmployeeDirectory";
+import AuditLogs from "./pages/AuditLogs";
+import Assets from "./pages/Assets";
+import Payroll from "./pages/Payroll";
+import ResourceAllocation from "./pages/ResourceAllocation";
+import ClientInvoicing from "./pages/ClientInvoicing";
 
 import { CompanyProvider } from "./contexts/CompanyContext";
+import PWAInstallPrompt from "./components/common/PWAInstallPrompt";
+
 
 // ============ Inner component (uses AuthContext + PermissionContext) ============
 function AppRoutes() {
@@ -87,19 +100,33 @@ function AppRoutes() {
         <Route path="project" element={hasPermission("project_management", "read") ? <Project /> : <Navigate to="/" />} />
         <Route path="permission" element={hasPermission("permission_management", "read") ? <Permission /> : <Navigate to="/" />} />
         <Route path="task-status" element={hasPermission("task_status_management", "read") ? <TaskStatus /> : <Navigate to="/" />} />
-        <Route path="team" element={hasPermission("project_management", "read") ? <Team /> : <Navigate to="/" />} />
+        <Route path="team" element={hasPermission("team_management", "read") || hasPermission("project_management", "read") ? <Team /> : <Navigate to="/" />} />
         <Route path="document" element={hasPermission("document", "read") ? <Document /> : <Navigate to="/" />} />
         <Route path="attendance" element={hasPermission("attendance_management", "read") ? <Attendance /> : <Navigate to="/" />} />
-        <Route path="qa" element={<QA />} />
-        <Route path="leave" element={<Leave />} />
-        <Route path="timesheet" element={<Timesheet />} />
-        <Route path="rating" element={<Rating />} />
-        <Route path="breaks" element={<BreakManagement />} />
-        <Route path="tickets" element={<Tickets />} />
+        <Route path="timing-manager" element={hasPermission("time_instances_management", "read") ? <TimeManager /> : <Navigate to="/" />} />
+        <Route path="time-manager" element={<Navigate to="/timing-manager" replace />} />
+        <Route path="qa" element={hasPermission("qa_management", "read") ? <QA /> : <Navigate to="/" />} />
+        <Route path="leave" element={hasPermission("leave_management", "read") ? <Leave /> : <Navigate to="/" />} />
+        <Route path="timesheet" element={hasPermission("timesheet_management", "read") ? <Timesheet /> : <Navigate to="/" />} />
+        <Route path="rating" element={hasPermission("rating_management", "read") ? <Rating /> : <Navigate to="/" />} />
+        <Route path="breaks" element={hasPermission("break_management", "read") ? <BreakManagement /> : <Navigate to="/" />} />
+        <Route path="tickets" element={hasPermission("ticket_management", "read") ? <Tickets /> : <Navigate to="/" />} />
+        <Route path="expenses" element={hasPermission("expense_management", "read") ? <Expenses /> : <Navigate to="/" />} />
+        <Route path="expense" element={<Navigate to="/expenses" replace />} />
+        <Route path="notices" element={hasPermission("notice_board", "read") ? <NoticeBoard /> : <Navigate to="/" />} />
+        <Route path="holidays" element={hasPermission("holiday_calendar", "read") ? <HolidayCalendar /> : <Navigate to="/" />} />
+        <Route path="wfh" element={hasPermission("wfh_management", "read") ? <WfhRequests /> : <Navigate to="/" />} />
+        <Route path="directory" element={hasPermission("employee_directory", "read") ? <EmployeeDirectory /> : <Navigate to="/" />} />
+        <Route path="audit-logs" element={hasPermission("audit_logs", "read") ? <AuditLogs /> : <Navigate to="/" />} />
+        <Route path="assets" element={hasPermission("asset_management", "read") ? <Assets /> : <Navigate to="/" />} />
+        <Route path="payroll" element={hasPermission("payroll_management", "read") ? <Payroll /> : <Navigate to="/" />} />
+        <Route path="resource-allocation" element={hasPermission("resource_management", "read") ? <ResourceAllocation /> : <Navigate to="/" />} />
+        <Route path="client-reports" element={hasPermission("client_reports", "read") ? <ClientInvoicing /> : <Navigate to="/" />} />
         <Route path="profile" element={<Profile />} />
+
         <Route path="policies" element={<Navigate to="/profile?tab=policies" replace />} />
-        <Route path="chat" element={<Chat />} />
-        <Route path="clients" element={isOwnerOrAdmin ? <Client /> : <Navigate to="/" />} />
+        <Route path="chat" element={hasPermission("chat_management", "read") ? <Chat /> : <Navigate to="/" />} />
+        <Route path="clients" element={hasPermission("client_management", "read") ? <Client /> : <Navigate to="/" />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
 
@@ -117,6 +144,7 @@ function App() {
             <PermissionProvider>
               <CompanyProvider>
                 <AppRoutes />
+                <PWAInstallPrompt />
               </CompanyProvider>
             </PermissionProvider>
           </AuthProvider>

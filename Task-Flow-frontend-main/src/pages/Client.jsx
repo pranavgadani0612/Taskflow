@@ -47,6 +47,7 @@ export default function Client() {
   const [editId, setEditId]         = useState(null);
   const [form, setForm]             = useState(initForm);
   const [toast, setToast]           = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [viewClient, setViewClient] = useState(null);
   const [loading, setLoading]       = useState(false);
 
@@ -82,12 +83,10 @@ export default function Client() {
 
   /* ─── Save ───────────────────────────────────────── */
   const save = async () => {
-    if (!form.name.trim())              return showToast("Name is required", "error");
-    if (!form.email.trim())             return showToast("Email is required", "error");
-    if (!emailRegex.test(form.email))   return showToast("Enter a valid email", "error");
     if (form.phone && !/^\d{10,15}$/.test(form.phone.trim()))
       return showToast("Phone must be 10–15 digits", "error");
 
+    setFieldErrors({});
     try {
       if (editId) {
         await API.put(`/clients/${editId}`, form);
@@ -100,7 +99,17 @@ export default function Client() {
       setShowForm(false);
       load();
     } catch (err) {
-      showToast(err?.response?.data?.message || "Error saving client", "error");
+      const serverMsg = err?.response?.data?.error || err?.response?.data?.message;
+      const field = err?.response?.data?.field;
+      if (field && serverMsg) {
+        setFieldErrors({ [field]: serverMsg });
+      } else if (serverMsg && serverMsg.toLowerCase().includes("client name")) {
+        setFieldErrors({ name: serverMsg });
+      } else if (serverMsg && serverMsg.toLowerCase().includes("email")) {
+        setFieldErrors({ email: serverMsg });
+      } else {
+        showToast(serverMsg || "Error saving client", "error");
+      }
     }
   };
 
@@ -108,6 +117,7 @@ export default function Client() {
   const resetForm = () => {
     setForm(initForm);
     setEditId(null);
+    setFieldErrors({});
   };
 
   /* ─── Edit ───────────────────────────────────────── */
@@ -194,7 +204,7 @@ export default function Client() {
     <div className="page">
       <PageHeader
         title="Client Management"
-        buttonText={isOwner ? "+ Add Client" : null}
+        buttonText={hasPermission("client_management", "create") ? "+ Add Client" : null}
         onButtonClick={() => { resetForm(); setShowForm(true); }}
       />
 
@@ -213,7 +223,11 @@ export default function Client() {
             type="text"
             placeholder="e.g. Rahul Sharma"
             value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            onChange={(e) => {
+              setForm({ ...form, name: e.target.value });
+              if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: "" }));
+            }}
+            error={fieldErrors.name}
             required
           />
 
@@ -222,8 +236,12 @@ export default function Client() {
             type="email"
             placeholder="client@example.com"
             value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            onChange={(e) => {
+              setForm({ ...form, email: e.target.value });
+              if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: "" }));
+            }}
             maxLength={255}
+            error={fieldErrors.email}
             required
           />
 
@@ -417,16 +435,20 @@ export default function Client() {
             )}
 
             {/* Actions */}
-            {isOwner && (
+            {(hasPermission("client_management", "update") || hasPermission("client_management", "delete")) && (
               <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end" }}>
-                <button
-                  onClick={() => { setViewClient(null); edit(viewClient); }}
-                  style={{ padding: "8px 20px", borderRadius: 9, border: "1px solid var(--ui-border)", background: "var(--ui-surface)", color: "var(--text-main)", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
-                >Edit</button>
-                <button
-                  onClick={() => { setViewClient(null); remove(viewClient._id); }}
-                  style={{ padding: "8px 20px", borderRadius: 9, border: "none", background: "#ef4444", color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
-                >Delete</button>
+                {hasPermission("client_management", "update") && (
+                  <button
+                    onClick={() => { setViewClient(null); edit(viewClient); }}
+                    style={{ padding: "8px 20px", borderRadius: 9, border: "1px solid var(--ui-border)", background: "var(--ui-surface)", color: "var(--text-main)", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+                  >Edit</button>
+                )}
+                {hasPermission("client_management", "delete") && (
+                  <button
+                    onClick={() => { setViewClient(null); remove(viewClient._id); }}
+                    style={{ padding: "8px 20px", borderRadius: 9, border: "none", background: "#ef4444", color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+                  >Delete</button>
+                )}
               </div>
             )}
           </div>
@@ -440,8 +462,8 @@ export default function Client() {
           : clients
         }
         columns={columns}
-        onEdit={isOwner ? edit : null}
-        onDelete={isOwner ? remove : null}
+        onEdit={hasPermission("client_management", "update") ? edit : null}
+        onDelete={hasPermission("client_management", "delete") ? remove : null}
       />
 
       {/* ── TOAST ── */}

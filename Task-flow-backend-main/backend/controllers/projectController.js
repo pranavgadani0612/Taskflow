@@ -21,7 +21,17 @@ const getAssignedStaffObjects = async (assignedIds) => {
 exports.createProject = async (req, res) => {
   try {
     const { name, description, assignedTo, status } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: "Project name is required" });
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Plese enter project name", field: "name" });
+    }
+
+    const trimmedName = name.trim();
+
+    // B16: Prevent duplicate project names
+    const [existing] = await pool.query("SELECT id FROM projects WHERE LOWER(name) = ? LIMIT 1", [trimmedName.toLowerCase()]);
+    if (existing.length > 0) {
+      return res.status(409).json({ error: `A project with name '${trimmedName}' already exists!` });
+    }
 
     const projectId = `proj_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const assignedArray = Array.isArray(assignedTo) ? assignedTo : [];
@@ -55,10 +65,60 @@ exports.createProject = async (req, res) => {
   }
 };
 
+const userCanSeeAllProjects = (user) => {
+  if (!user) return false;
+  const isSuperAdmin = user.email === "gadanipranav@gmail.com" || 
+                       user.email === (process.env.SUPERADMIN_EMAIL || "gadanipranav@gmail.com") || 
+                       user.role?.name === "Super Admin";
+  if (isSuperAdmin) return true;
+
+  const roleName = String(user.role?.name || "").toLowerCase();
+  const roleId = String(user.role?.id || user.role?._id || user.role || "").toLowerCase();
+  const position = String(user.position || "").toLowerCase();
+
+  const perms = Array.isArray(user.role?.permissions) ? user.role.permissions : [];
+  const projPerm = perms.find(p => p.value === "project_management");
+  const hasFullAccess = projPerm?.all || projPerm?.delete;
+
+  return roleName.includes("owner") ||
+         roleName.includes("admin") ||
+         roleName.includes("manager") ||
+         roleId === "role_owner" ||
+         roleId === "role_superadmin" ||
+         position.includes("manager") ||
+         position.includes("owner") ||
+         position.includes("admin") ||
+         Boolean(hasFullAccess);
+};
+
+const isProjectAssignedToUser = (project, user) => {
+  if (!user) return false;
+  const userId = String(user.id || user._id || "").toLowerCase().trim();
+  const userEmail = String(user.email || "").toLowerCase().trim();
+  const userName = String(user.name || "").toLowerCase().trim();
+
+  const assignedList = Array.isArray(project.assignedTo) ? project.assignedTo : [];
+  return assignedList.some(u => {
+    if (!u) return false;
+    if (typeof u === "string") {
+      const s = u.toLowerCase().trim();
+      return s === userId || s === userEmail || (userName && s.includes(userName));
+    }
+    const uId = String(u.id || u._id || "").toLowerCase().trim();
+    const uEmail = String(u.email || "").toLowerCase().trim();
+    const uName = String(u.name || "").toLowerCase().trim();
+
+    return (userId && uId === userId) ||
+           (userEmail && uEmail === userEmail) ||
+           (userName && uName === userName) ||
+           (userName && (uName.includes(userName) || userName.includes(uName)));
+  });
+};
+
 exports.getProjects = async (req, res) => {
   try {
     const [rows] = await pool.query("SELECT * FROM projects ORDER BY created_at DESC");
-    const formatted = rows.map(p => {
+    let formatted = rows.map(p => {
       let assigned = [];
       if (p.assigned_to) {
         try {
@@ -73,6 +133,22 @@ exports.getProjects = async (req, res) => {
         assignedTo: assigned
       };
     });
+
+    // If user is a regular staff/developer, show projects assigned directly OR via assigned tasks (B38)
+    if (!userCanSeeAllProjects(req.user)) {
+      // Find projects where user has tasks or subtasks assigned
+      const userId = String(req.user?.id || req.user?._id || "");
+      const [taskProjects] = await pool.query(
+        `SELECT DISTINCT project FROM tasks 
+         WHERE (assigned_to = ? OR assigned_to LIKE ? OR id IN (SELECT task_id FROM subtasks WHERE assigned_to = ?))
+         AND project IS NOT NULL`,
+        [userId, `%"id":"${userId}"%`, userId]
+      );
+      const userTaskProjectIds = new Set(taskProjects.map(tp => String(tp.project)));
+
+      formatted = formatted.filter(p => isProjectAssignedToUser(p, req.user) || userTaskProjectIds.has(String(p.id)));
+    }
+
     res.json(formatted);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -94,11 +170,17 @@ exports.getProject = async (req, res) => {
       }
     }
 
-    res.json({
+    const projectData = {
       ...p,
       _id: p.id,
       assignedTo: assigned
-    });
+    };
+
+    if (!userCanSeeAllProjects(req.user) && !isProjectAssignedToUser(projectData, req.user)) {
+      return res.status(403).json({ error: "Access denied: You are not assigned to this project" });
+    }
+
+    res.json(projectData);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -108,6 +190,10 @@ exports.updateProject = async (req, res) => {
   try {
     const projectId = req.params.id;
     const { name, description, assignedTo, status } = req.body;
+
+    if (name !== undefined && (!name || !name.trim())) {
+      return res.status(400).json({ error: "Plese enter project name", field: "name" });
+    }
 
     const assignedArray = Array.isArray(assignedTo) ? assignedTo : [];
     const assignedUsers = await getAssignedStaffObjects(assignedArray);

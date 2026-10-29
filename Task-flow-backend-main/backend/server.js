@@ -1,4 +1,13 @@
-require("dotenv").config({ path: './.env' });
+process.env.TZ = process.env.TZ || "Asia/Kolkata";
+const path = require("path");
+const fs = require("fs");
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
+require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("dotenv").config({ path: path.join(__dirname, "../.env.example") });
+require("dotenv").config({ path: path.join(__dirname, ".env.example") });
+require("dotenv").config({ path: path.join(process.cwd(), ".env") });
+require("dotenv").config({ path: path.join(process.cwd(), ".env.example") });
+require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -48,6 +57,13 @@ app.set("io", io);
 
 io.on("connection", (socket) => {
   console.log("🔌 Client connected:", socket.id);
+
+  // ── Register user for direct global notifications ──
+  socket.on("register_user", (userId) => {
+    if (userId) {
+      socket.join(`user_${userId}`);
+    }
+  });
 
   // ── Chat: join a conversation room ──
   socket.on("join_conversation", (conversationId) => {
@@ -101,6 +117,26 @@ io.on("connection", (socket) => {
 
       // Emit to all in room including sender
       io.to(`conv_${conversationId}`).emit("new_message", msg);
+      
+      // Notify conversation participants personally (for global notification & unread badge)
+      const [convRows] = await pool.query("SELECT participants FROM chat_conversations WHERE id = ?", [conversationId]);
+      if (convRows.length > 0) {
+        let pList = [];
+        try {
+          pList = typeof convRows[0].participants === "string" ? JSON.parse(convRows[0].participants) : (convRows[0].participants || []);
+        } catch(e) {}
+        pList.forEach(pId => {
+          if (pId && pId.toString() !== senderId.toString()) {
+            io.to(`user_${pId}`).emit("chat_notification", {
+              conversationId,
+              message: msg,
+              senderName: senderName || "Someone",
+              text: text
+            });
+          }
+        });
+      }
+
       // Also notify all company members for sidebar unread badge
       io.emit(`conv_updated_${conversationId}`, {
         conversationId,
@@ -108,6 +144,34 @@ io.on("connection", (socket) => {
       });
     } catch (err) {
       console.error("Socket send_message error:", err);
+    }
+  });
+
+  // ── Chat: mark conversation as read ──
+  socket.on("mark_as_read", async ({ conversationId, userId }) => {
+    try {
+      if (!conversationId || !userId) return;
+      const { pool } = require("./config/mysqlDb");
+      const [unreadMsgs] = await pool.query(
+        `SELECT id, read_by FROM chat_messages WHERE conversation_id = ?`,
+        [conversationId]
+      );
+      for (const m of unreadMsgs) {
+        let readList = [];
+        try {
+          readList = typeof m.read_by === "string" ? JSON.parse(m.read_by) : (m.read_by || []);
+        } catch(e) {}
+        if (!readList.map(String).includes(String(userId))) {
+          readList.push(String(userId));
+          await pool.query(
+            `UPDATE chat_messages SET read_by = ? WHERE id = ?`,
+            [JSON.stringify(readList), m.id]
+          );
+        }
+      }
+      socket.emit("conversation_marked_read", { conversationId });
+    } catch (err) {
+      console.error("Socket mark_as_read error:", err);
     }
   });
 
@@ -152,33 +216,79 @@ app.use("/api/ratings", ratingRoutes);
 app.use("/api/breaks", breakRoutes);
 app.use("/api/timesheets", require("./routes/timesheetRoutes"));
 app.use("/api/tickets", require("./routes/ticketRoutes"));
+const expenseRoutes = require("./routes/expenseRoutes");
+app.use("/api/expenses", expenseRoutes);
+app.use("/api/expense-categories", (req, res, next) => {
+  req.url = "/categories" + (req.url === "/" ? "" : req.url);
+  expenseRoutes(req, res, next);
+});
+app.use("/api/holidays", require("./routes/holidayRoutes"));
+app.use("/api/announcements", require("./routes/announcementRoutes"));
+app.use("/api/wfh", require("./routes/wfhRoutes"));
+app.use("/api/audit-logs", require("./routes/auditRoutes"));
+// Phase 2 Routes
+app.use("/api/assets", require("./routes/assetRoutes"));
+app.use("/api/payroll", require("./routes/payrollRoutes"));
+app.use("/api/allocations", require("./routes/allocationRoutes"));
+app.use("/api/client-reports", require("./routes/clientReportRoutes"));
+app.use("/api/overtime", require("./routes/overtimeRoutes"));
+
 
 // Get current user permissions
 app.get("/api/user-permissions", authMiddleware, getUserPermissions);
 
-app.get("/", (req, res) => {
-  res.send("Task Manager API Running ");
+
+
+// Serve frontend build if present in public or dist
+const possibleDistPaths = [
+  path.join(__dirname, "../public"),
+  path.join(__dirname, "public"),
+  path.join(__dirname, "dist"),
+  path.join(__dirname, "../frontend/dist"),
+  path.join(__dirname, "../task-flow-frontend-main/dist"),
+  path.join(__dirname, "../Task-Flow-frontend-main/dist"),
+];  
+
+let activeDistPath = null;
+for (const p of possibleDistPaths) {
+  if (fs.existsSync(path.join(p, "index.html"))) {
+    activeDistPath = p;
+    break;
+  }
+}
+
+if (activeDistPath) {
+  app.use("/assets", express.static(path.join(activeDistPath, "assets")));
+  app.use(express.static(activeDistPath));
+  app.use("/assets", express.static(path.join(__dirname, "../assets")));
+  app.use(express.static(path.join(__dirname, "..")));
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/uploads") || req.path.startsWith("/socket.io")) {
+      return next();
+    }
+    res.sendFile(path.join(activeDistPath, "index.html"));
+  });
+}
+// 404 Handler for API endpoints (B30)
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: `Cannot ${req.method} ${req.originalUrl} - Endpoint not found` });
 });
+
 
 // Connect Databases
 const { initDB } = require("./config/mysqlDb");
 const seedMySQLDefaults = require("./config/seedMySQLDefaults");
+const seedDummyData = require("./seedData");
 
-async function startServer() {
+// Start server with dynamic port FIRST so IIS/iisnode gets connection immediately
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, async () => {
+  console.log(`🚀 Server running on port ${PORT} with Socket.io & Pure MySQL (taskflow_db) ⚡`);
   try {
-    // 1. Initialize MySQL taskflow_db tables
     await initDB();
-
-    // 2. Seed MySQL roles, permissions, and statuses
     await seedMySQLDefaults();
-    console.log("✅ Pure MySQL (taskflow_db) connected & seeded successfully!");
-
-    // Start server directly with MySQL
-    server.listen(5000, () => console.log("🚀 Server running on port 5000 with Socket.io & Pure MySQL (taskflow_db) ⚡"));
+    console.log("✅ Pure MySQL (taskflow_db) connected successfully!");
   } catch (err) {
-    console.error("❌ Startup Error:", err);
-    process.exit(1);
+    console.error("⚠️ MySQL Connection Notice:", err.message);
   }
-}
-
-startServer();
+});

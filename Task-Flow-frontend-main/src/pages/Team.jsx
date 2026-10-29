@@ -60,10 +60,14 @@ export default function Team() {
     const getInitials = (name = "") =>
         name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
 
-    const filteredMembers = members.filter(m =>
-        m.name?.toLowerCase().includes(search.toLowerCase()) ||
-        m.email?.toLowerCase().includes(search.toLowerCase())
-    );
+    const trimmedSearch = search.trim().toLowerCase();
+    const filteredMembers = members.filter(m => {
+        if (!trimmedSearch || trimmedSearch.length < 3) return true;
+        return (
+            m.name?.toLowerCase().includes(trimmedSearch) ||
+            m.email?.toLowerCase().includes(trimmedSearch)
+        );
+    });
 
     return (
         <div className="page">
@@ -109,7 +113,7 @@ export default function Team() {
                 }}>
                     {filteredMembers.map(member => (
                         <div
-                            key={member._id}
+                            key={member._id || member.id}
                             style={{
                                 background: "var(--ui-surface)",
                                 borderRadius: "12px",
@@ -141,7 +145,7 @@ export default function Team() {
                                     background: member.email === "gadanipranav@gmail.com" ? '#fce7f3' : 'var(--primary-light)',
                                     color: member.email === "gadanipranav@gmail.com" ? '#be185d' : 'var(--primary-color)'
                                 }}>
-                                    {member.role?.name || "Member"}
+                                    {member.role?.name || member.role || "Member"}
                                 </span>
                             </div>
 
@@ -169,6 +173,10 @@ export default function Team() {
 
                             {/* Info Rows */}
                             <div style={{ width: '100%', borderTop: '1px solid #f1f5f9', paddingTop: '16px', marginTop: 'auto' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-light)', fontWeight: '600', textTransform: 'uppercase' }}>Department</span>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-main)', fontWeight: '500' }}>{member.department || "Engineering"}</span>
+                                </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                                     <span style={{ fontSize: '11px', color: 'var(--text-light)', fontWeight: '600', textTransform: 'uppercase' }}>Phone</span>
                                     <span style={{ fontSize: '12px', color: 'var(--text-main)', fontWeight: '500' }}>{member.phone || "—"}</span>

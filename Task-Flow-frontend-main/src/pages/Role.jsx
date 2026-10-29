@@ -5,6 +5,7 @@ import FormModal from "../components/common/FormModal";
 import PageHeader from "../components/common/PageHeader";
 import API from "../api/api";
 import { TextInput, SelectField } from "../components/common/FormFields";
+import { SearchIcon } from "../components/common/Icons";
 import { useAuth } from "../contexts/AuthContext";
 import { usePermissions } from "../contexts/PermissionContext";
 import { useCompany } from "../contexts/CompanyContext";
@@ -12,6 +13,7 @@ import { useCompany } from "../contexts/CompanyContext";
 export default function Role() {
   const [roles, setRoles] = useState([]);
   const [permissions, setPermissions] = useState([]);
+  const [permissionSearch, setPermissionSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [toast, setToast] = useState(null);
@@ -27,6 +29,7 @@ export default function Role() {
     return ctxHasPermission(module, action);
   };
 
+  const [fieldErrors, setFieldErrors] = useState({});
   const [form, setForm] = useState({
     name: "",
     status: "Active",
@@ -68,18 +71,19 @@ export default function Role() {
 
   // SAVE
   const save = async () => {
+    setFieldErrors({});
     // Validation
     const nameRegex = /^[a-zA-Z0-9\s]+$/;
     if (!form.name.trim()) {
-      showToast("Role name is required", "error");
+      setFieldErrors({ name: "Plese enter role name" });
       return;
     }
     if (form.name.length > 50) {
-      showToast("Role name must be 50 characters or less", "error");
+      setFieldErrors({ name: "Role name must be 50 characters or less" });
       return;
     }
     if (!nameRegex.test(form.name.trim())) {
-      showToast("Role name can only contain letters, numbers and spaces", "error");
+      setFieldErrors({ name: "Role name can only contain letters, numbers and spaces" });
       return;
     }
     if (!form.status) {
@@ -132,7 +136,12 @@ export default function Role() {
       load();
     } catch (error) {
       console.error("Error saving role:", error);
-      showToast("Error saving role", "error");
+      const errMsg = error.response?.data?.error || error.response?.data?.msg || error.message || "Error saving role";
+      if (errMsg.toLowerCase().includes("role name") || errMsg.toLowerCase().includes("name")) {
+        setFieldErrors({ name: "Plese enter role name" });
+      } else {
+        showToast(errMsg, "error");
+      }
     }
   };
 
@@ -143,6 +152,8 @@ export default function Role() {
       status: "Active",
       permissions: []
     });
+    setFieldErrors({});
+    setPermissionSearch("");
     setEditId(null);
   };
 
@@ -307,9 +318,13 @@ export default function Role() {
               label="Role Name"
               placeholder="Enter role name"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, name: e.target.value });
+                if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: null }));
+              }}
               maxLength={50}
               required
+              error={fieldErrors.name}
               className="role-name-field"
               style={{ flex: 1 }}
             />
@@ -328,14 +343,74 @@ export default function Role() {
             />
           </div>
 
-          <div className="form-group" style={{ marginTop: '30px' }}>
-            <label style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '12px', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Permissions Matrix
-            </label>
+          <div className="form-group" style={{ marginTop: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Permissions Matrix {permissionSearch && `(Filtered: ${permissions.filter(p => p.name?.toLowerCase().includes(permissionSearch.toLowerCase())).length})`}
+              </label>
+              
+              {/* Permission Matrix Search Bar */}
+              <div style={{ position: 'relative', width: '240px' }}>
+                <input
+                  type="text"
+                  placeholder="Search module..."
+                  value={permissionSearch}
+                  onChange={(e) => setPermissionSearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '34px',
+                    padding: '0 30px 0 10px',
+                    fontSize: '12.5px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--ui-border, #cbd5e1)',
+                    background: 'var(--ui-surface, #fff)',
+                    color: 'var(--text-main, #1e293b)',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+                {permissionSearch ? (
+                  <button
+                    type="button"
+                    onClick={() => setPermissionSearch("")}
+                    style={{
+                      position: 'absolute',
+                      right: '8px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '14px',
+                      color: 'var(--text-muted, #94a3b8)',
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                  >
+                    ×
+                  </button>
+                ) : (
+                  <span style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--text-muted, #94a3b8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    pointerEvents: 'none'
+                  }}>
+                    <SearchIcon size={14} color="var(--text-muted, #94a3b8)" />
+                  </span>
+                )}
+              </div>
+            </div>
+
             <div className="permissions-table-container" style={{
               background: 'var(--ui-surface)',
               borderRadius: '12px',
               overflowX: 'auto',
+              maxHeight: '360px',
+              overflowY: 'auto',
               WebkitOverflowScrolling: 'touch',
               border: '1px solid var(--ui-border)',
               boxShadow: 'var(--shadow-sm)'
@@ -346,7 +421,7 @@ export default function Role() {
                 borderCollapse: 'collapse',
               }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid var(--ui-border)', background: 'var(--ui-bg)' }}>
+                  <tr style={{ borderBottom: '1px solid var(--ui-border)', background: 'var(--ui-bg)', position: 'sticky', top: 0, zIndex: 10 }}>
                     <th style={{
                       padding: '14px 20px',
                       textAlign: 'left',
@@ -366,7 +441,13 @@ export default function Role() {
                   </tr>
                 </thead>
                 <tbody>
-                  {permissions.map(permission => {
+                  {permissions
+                    .filter(p => {
+                      const trimmed = (permissionSearch || "").trim().toLowerCase();
+                      if (!trimmed || trimmed.length < 3) return true;
+                      return p.name?.toLowerCase().includes(trimmed);
+                    })
+                    .map(permission => {
                     const currentPermission = form.permissions.find(p => p.value === permission.value);
                     return (
                       <tr key={permission._id} style={{ borderBottom: '1px solid var(--ui-border)' }}>

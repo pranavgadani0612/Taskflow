@@ -21,11 +21,11 @@ exports.registerCompany = async (req, res) => {
     const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
     const pincodeRegex = /^[0-9]{6}$/;
 
-    if (!companyName) return res.status(400).json({ error: "Company Name is required" });
-    if (!email || !emailRegex.test(email)) return res.status(400).json({ error: "Valid Company Email is required" });
-    if (!contactPersonName) return res.status(400).json({ error: "Contact Person Name is required" });
-    if (!contactPersonPhone || !phoneRegex.test(contactPersonPhone)) return res.status(400).json({ error: "Valid 10-digit Contact Phone is required" });
-    if (!password || password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
+    if (!companyName || !companyName.trim()) return res.status(400).json({ error: "Plese enter company name" });
+    if (!email || !emailRegex.test(email)) return res.status(400).json({ error: "Plese enter email" });
+    if (!contactPersonName || !contactPersonName.trim()) return res.status(400).json({ error: "Plese enter contact person name" });
+    if (!contactPersonPhone || !phoneRegex.test(contactPersonPhone)) return res.status(400).json({ error: "Plese enter contact phone" });
+    if (!password || password.length < 6) return res.status(400).json({ error: "Plese enter password" });
 
     if (gstNumber && !gstRegex.test(gstNumber.toUpperCase())) return res.status(400).json({ error: "Invalid GST Number format" });
     if (panNumber && !panRegex.test(panNumber.toUpperCase())) return res.status(400).json({ error: "Invalid PAN Number format" });
@@ -136,8 +136,8 @@ exports.getCompanies = async (req, res) => {
     return res.json([
       {
         _id: "default_company",
-        companyName: "TaskFlow Technologies",
-        email: "info@taskflow.com",
+        companyName: "Padhya Software Technologies",
+        email: "contact@padhyasoft.com",
         phone: "9876543210",
         addressLine1: "Tech Hub, 4th Floor",
         city: "Ahmedabad",
@@ -170,8 +170,8 @@ async function getCompanyData(companyId) {
 
   return {
     _id: "default_company",
-    companyName: "TaskFlow Technologies",
-    email: "info@taskflow.com",
+    companyName: "Padhya Software Technologies",
+    email: "contact@padhyasoft.com",
     phone: "9876543210",
     addressLine1: "Tech Hub, 4th Floor",
     city: "Ahmedabad",
@@ -316,7 +316,8 @@ exports.addPolicy = async (req, res) => {
     if (!isOwnerOrAdmin) return res.status(403).json({ error: "Only Admin can add company policies" });
 
     const { title, category, summary, content, effectiveDate, status } = req.body;
-    if (!title || !content) return res.status(400).json({ error: "Policy title and content are required" });
+    if (!title || !title.trim()) return res.status(400).json({ error: "Plese enter policy title" });
+    if (!content || !content.trim()) return res.status(400).json({ error: "Plese enter policy content" });
 
     let companyId = req.user.companyId?._id || req.user.companyId;
     const company = await getCompanyData(companyId);

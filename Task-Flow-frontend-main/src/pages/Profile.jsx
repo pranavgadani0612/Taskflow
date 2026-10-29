@@ -7,6 +7,7 @@ import { useCompany } from "../contexts/CompanyContext";
 import PageHeader from "../components/common/PageHeader";
 import { TextInput } from "../components/common/FormFields";
 import { PolicyIcon, SearchIcon, ClipboardIcon, EditIcon, TrashIcon, CloseIcon, PlusIcon, ChevronDownIcon, ChevronUpIcon } from "../components/common/Icons";
+import ConfirmModal from "../components/common/ConfirmModal";
 
 export default function Profile() {
     const { user } = useAuth();
@@ -14,6 +15,29 @@ export default function Profile() {
     const { showToast } = useToast();
     const [searchParams] = useSearchParams();
     const isOwnerOrAdmin = user?.role?.name === "Company Owner" || user?.email === "gadanipranav@gmail.com" || user?.role?.name === "Super Admin";
+
+    const [confirmConfig, setConfirmConfig] = useState({
+        show: false,
+        title: "Confirmation",
+        message: "",
+        onConfirm: () => {},
+        confirmText: "Confirm",
+        confirmColor: "var(--danger-color)"
+    });
+
+    const askConfirm = (title, message, onConfirm, confirmText = "Delete", confirmColor = "var(--danger-color)") => {
+        setConfirmConfig({
+            show: true,
+            title,
+            message,
+            onConfirm: async () => {
+                setConfirmConfig(prev => ({ ...prev, show: false }));
+                await onConfirm();
+            },
+            confirmText,
+            confirmColor
+        });
+    };
 
     const initialTab = searchParams.get("tab") || (isOwnerOrAdmin ? "bio" : "policies");
     const [activeTab, setActiveTab] = useState(initialTab);
@@ -49,6 +73,7 @@ export default function Profile() {
     const [showPolicyModal, setShowPolicyModal] = useState(false);
     const [editingPolicy, setEditingPolicy] = useState(null);
     const [policySaving, setPolicySaving] = useState(false);
+    const [policyFieldErrors, setPolicyFieldErrors] = useState({});
     const [policyForm, setPolicyForm] = useState({
         title: "",
         category: "General",
@@ -60,7 +85,8 @@ export default function Profile() {
 
     const [attSettings, setAttSettings] = useState({
         monthly_late_instances: 3,
-        late_grace_minutes: 30
+        late_grace_minutes: 30,
+        half_day_late_minutes: 120
     });
 
     useEffect(() => {
@@ -80,7 +106,22 @@ export default function Profile() {
             const url = companyId ? `/staff/company/settings?companyId=${companyId}` : "/staff/company/settings";
             const res = await API.get(url);
             if (res.data) {
-                setCompanyData(res.data);
+                setCompanyData(prev => ({
+                    ...prev,
+                    ...res.data,
+                    companyName: res.data.companyName ?? "",
+                    email: res.data.email ?? "",
+                    phone: res.data.phone ?? "",
+                    addressLine1: res.data.addressLine1 ?? "",
+                    addressLine2: res.data.addressLine2 ?? "",
+                    city: res.data.city ?? "",
+                    state: res.data.state ?? "",
+                    pincode: res.data.pincode ?? "",
+                    gstNumber: res.data.gstNumber ?? "",
+                    panNumber: res.data.panNumber ?? "",
+                    holidays: Array.isArray(res.data.holidays) ? res.data.holidays : (prev.holidays || []),
+                    policies: Array.isArray(res.data.policies) ? res.data.policies : (prev.policies || [])
+                }));
                 setLogoPreview(res.data.appLogo || "");
             }
             try {
@@ -88,7 +129,8 @@ export default function Profile() {
                 if (attRes.data) {
                     setAttSettings({
                         monthly_late_instances: attRes.data.monthly_late_instances ?? 3,
-                        late_grace_minutes: attRes.data.late_grace_minutes ?? 30
+                        late_grace_minutes: attRes.data.late_grace_minutes ?? 30,
+                        half_day_late_minutes: attRes.data.half_day_late_minutes ?? 120
                     });
                 }
             } catch (_) {}
@@ -150,6 +192,7 @@ export default function Profile() {
     // ─── POLICY HANDLERS (ADMIN ONLY MUTATIONS) ────────────────────────────────
     const handleOpenAddPolicy = () => {
         setEditingPolicy(null);
+        setPolicyFieldErrors({});
         setPolicyForm({
             title: "",
             category: "General",
@@ -163,6 +206,7 @@ export default function Profile() {
 
     const handleOpenEditPolicy = (policy) => {
         setEditingPolicy(policy);
+        setPolicyFieldErrors({});
         setPolicyForm({
             title: policy.title,
             category: policy.category || "General",
@@ -176,12 +220,18 @@ export default function Profile() {
 
     const handleSavePolicy = async (e) => {
         e.preventDefault();
+        setPolicyFieldErrors({});
+        const errors = {};
         if (!policyForm.title.trim()) {
-            showToast("Please enter a policy title", "error");
-            return;
+            errors.title = "Plese enter policy title";
         }
         if (!policyForm.content.trim()) {
-            showToast("Please enter policy content/clauses", "error");
+            errors.content = "Plese enter policy content";
+        }
+
+        if (Object.keys(errors).length > 0) {
+            setPolicyFieldErrors(errors);
+            showToast(Object.values(errors)[0], "error");
             return;
         }
 
@@ -196,23 +246,32 @@ export default function Profile() {
             }
             setShowPolicyModal(false);
             setEditingPolicy(null);
+            setPolicyFieldErrors({});
             fetchCompanyData();
         } catch (err) {
-            showToast(err.response?.data?.error || "Error saving policy", "error");
+            const errMsg = err.response?.data?.error || err.message || "Error saving policy";
+            if (errMsg.toLowerCase().includes("title")) {
+                setPolicyFieldErrors(prev => ({ ...prev, title: "Plese enter policy title" }));
+            }
+            if (errMsg.toLowerCase().includes("content")) {
+                setPolicyFieldErrors(prev => ({ ...prev, content: "Plese enter policy content" }));
+            }
+            showToast(errMsg, "error");
         } finally {
             setPolicySaving(false);
         }
     };
 
-    const handleDeletePolicy = async (policyId) => {
-        if (!window.confirm("Are you sure you want to delete this company policy?")) return;
-        try {
-            await API.delete(`/staff/company/policies/${policyId}`);
-            showToast("Policy removed successfully");
-            fetchCompanyData();
-        } catch (err) {
-            showToast(err.response?.data?.error || "Delete failed", "error");
-        }
+    const handleDeletePolicy = (policyId) => {
+        askConfirm("Delete Company Policy", "Are you sure you want to delete this company policy?", async () => {
+            try {
+                await API.delete(`/staff/company/policies/${policyId}`);
+                showToast("Policy removed successfully");
+                fetchCompanyData();
+            } catch (err) {
+                showToast(err.response?.data?.error || "Delete failed", "error");
+            }
+        });
     };
 
     const toggleExpandPolicy = (id) => {
@@ -287,7 +346,7 @@ export default function Profile() {
                                 <h3 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '24px', color: 'var(--text-main)' }}>Organization Details</h3>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '32px' }}>
                                     <TextInput label="Company Name" value={companyData.companyName} onChange={e => setCompanyData({...companyData, companyName: e.target.value})} />
-                                    <TextInput label="Business Email" value={companyData.email} onChange={e => setCompanyData({...companyData, email: e.target.value})} />
+                                    <TextInput type="email" label="Business Email" value={companyData.email} onChange={e => setCompanyData({...companyData, email: e.target.value})} />
                                     <TextInput label="Business Phone" value={companyData.phone} onChange={e => setCompanyData({...companyData, phone: e.target.value})} />
                                     <TextInput label="GST Number" value={companyData.gstNumber} onChange={e => setCompanyData({...companyData, gstNumber: e.target.value})} />
                                     <TextInput label="PAN Number" value={companyData.panNumber} onChange={e => setCompanyData({...companyData, panNumber: e.target.value})} />
@@ -347,7 +406,7 @@ export default function Profile() {
                         <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>
                             Configure the monthly late arrival allowances and grace period. Operating shift hours and break durations are dynamically configured under the <strong>Attendance &gt; Schedules &amp; Breaks</strong> module.
                         </p>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "40px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px", marginBottom: "40px" }}>
                             <div>
                                 <label style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "var(--text-main)", marginBottom: "6px" }}>Monthly Late Instances Limit (Count)</label>
                                 <input
@@ -373,6 +432,19 @@ export default function Profile() {
                                     placeholder="e.g. 30"
                                 />
                                 <span style={{ fontSize: "11px", color: "var(--text-muted)", display: "block", marginTop: "4px" }}>Clocking in after Shift Start + Grace (e.g. 10:00 + 30m = 10:31 AM) counts as late instance</span>
+                            </div>
+                            <div>
+                                <label style={{ display: "block", fontSize: "13px", fontWeight: "700", color: "var(--text-main)", marginBottom: "6px" }}>Max Late for Half Day (Minutes)</label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="480"
+                                    value={attSettings.half_day_late_minutes ?? 120}
+                                    onChange={e => setAttSettings({ ...attSettings, half_day_late_minutes: parseInt(e.target.value) || 0 })}
+                                    style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: "1px solid var(--ui-border)", background: "var(--ui-surface)", color: "var(--text-main)", boxSizing: "border-box" }}
+                                    placeholder="e.g. 120"
+                                />
+                                <span style={{ fontSize: "11px", color: "var(--text-muted)", display: "block", marginTop: "4px" }}>Arrival after Shift Start + this (e.g. 10:00 + 120m = 12:00 PM) directly marks as Half Day</span>
                             </div>
                         </div>
 
@@ -697,24 +769,33 @@ export default function Profile() {
                             </button>
                         </div>
 
-                        <form onSubmit={handleSavePolicy} style={{ padding: "24px" }}>
+                        <form noValidate onSubmit={handleSavePolicy} style={{ padding: "24px" }}>
                             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                                 <div>
                                     <label style={{ display: "block", fontSize: "12.5px", fontWeight: "700", color: "var(--text-main)", marginBottom: "6px" }}>
-                                        Policy Title *
+                                        Policy Title <span style={{ color: "#ef4444" }}>*</span>
                                     </label>
                                     <input
                                         type="text"
                                         placeholder="e.g. Workplace Attendance & Timesheet Policy"
+                                        required
                                         value={policyForm.title}
-                                        onChange={(e) => setPolicyForm({ ...policyForm, title: e.target.value })}
+                                        onChange={(e) => {
+                                            setPolicyForm({ ...policyForm, title: e.target.value });
+                                            if (policyFieldErrors.title) setPolicyFieldErrors(prev => ({ ...prev, title: null }));
+                                        }}
                                         style={{
                                             width: "100%", padding: "9px 12px", borderRadius: "8px",
-                                            border: "1px solid var(--ui-border)", background: "var(--ui-surface)",
+                                            border: policyFieldErrors.title ? "1px solid #ef4444" : "1px solid var(--ui-border)",
+                                            background: "var(--ui-surface)",
                                             color: "var(--text-main)", fontSize: "13.5px", outline: "none"
                                         }}
-                                        required
                                     />
+                                    {policyFieldErrors.title && (
+                                        <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                                            {policyFieldErrors.title}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
@@ -775,21 +856,30 @@ export default function Profile() {
 
                                 <div>
                                     <label style={{ display: "block", fontSize: "12.5px", fontWeight: "700", color: "var(--text-main)", marginBottom: "6px" }}>
-                                        Full Policy Content & Clauses *
+                                        Full Policy Content & Clauses <span style={{ color: "#ef4444" }}>*</span>
                                     </label>
                                     <textarea
                                         rows="8"
                                         placeholder="Enter the numbered clauses, expectations, and regulations for all team members..."
+                                        required
                                         value={policyForm.content}
-                                        onChange={(e) => setPolicyForm({ ...policyForm, content: e.target.value })}
+                                        onChange={(e) => {
+                                            setPolicyForm({ ...policyForm, content: e.target.value });
+                                            if (policyFieldErrors.content) setPolicyFieldErrors(prev => ({ ...prev, content: null }));
+                                        }}
                                         style={{
                                             width: "100%", padding: "10px 12px", borderRadius: "8px",
-                                            border: "1px solid var(--ui-border)", background: "var(--ui-surface)",
+                                            border: policyFieldErrors.content ? "1px solid #ef4444" : "1px solid var(--ui-border)",
+                                            background: "var(--ui-surface)",
                                             color: "var(--text-main)", fontSize: "13.5px", outline: "none",
                                             lineHeight: 1.6, resize: "vertical"
                                         }}
-                                        required
                                     />
+                                    {policyFieldErrors.content && (
+                                        <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                                            {policyFieldErrors.content}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -841,6 +931,16 @@ export default function Profile() {
                     </div>
                 </div>
             )}
+
+            <ConfirmModal
+                show={confirmConfig.show}
+                onClose={() => setConfirmConfig(prev => ({ ...prev, show: false }))}
+                onConfirm={confirmConfig.onConfirm}
+                title={confirmConfig.title}
+                message={confirmConfig.message}
+                confirmText={confirmConfig.confirmText}
+                confirmColor={confirmConfig.confirmColor}
+            />
         </div>
     );
 }

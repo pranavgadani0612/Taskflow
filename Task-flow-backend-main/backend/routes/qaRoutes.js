@@ -33,6 +33,9 @@ router.get("/test-cases", authMiddleware, async (req, res) => {
 router.post("/test-cases", authMiddleware, async (req, res) => {
   try {
     const { project_id, project_name, module_name, title, preconditions, steps, expected_result, severity } = req.body;
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: "Plese enter test case title" });
+    }
     const id = `tc_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const created_by = req.user.name || "QA Tester";
 
@@ -118,6 +121,9 @@ router.get("/bugs", authMiddleware, async (req, res) => {
 router.post("/bugs", authMiddleware, async (req, res) => {
   try {
     const { project_id, project_name, test_case_id, title, description, steps_to_reproduce, severity, assigned_to, environment } = req.body;
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: "Plese enter bug title" });
+    }
     const id = `bug_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const reported_by = req.user.name || "QA Tester";
 

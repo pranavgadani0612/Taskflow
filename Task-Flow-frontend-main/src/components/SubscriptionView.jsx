@@ -4,6 +4,7 @@ import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import DataTable from "./common/DataTable";
 import FormModal from "./common/FormModal";
+import ConfirmModal from "./common/ConfirmModal";
 import { TextInput, SelectField } from "./common/FormFields";
 import { CheckIcon, WrenchIcon } from "./common/Icons";
 
@@ -53,6 +54,29 @@ export default function SubscriptionView({ isSuperAdmin = false }) {
   const [usage, setUsage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState(null);
+
+  const [confirmConfig, setConfirmConfig] = useState({
+    show: false,
+    title: "Confirmation",
+    message: "",
+    onConfirm: () => {},
+    confirmText: "Confirm",
+    confirmColor: "var(--danger-color)"
+  });
+
+  const askConfirm = (title, message, onConfirm, confirmText = "Delete", confirmColor = "var(--danger-color)") => {
+    setConfirmConfig({
+      show: true,
+      title,
+      message,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, show: false }));
+        await onConfirm();
+      },
+      confirmText,
+      confirmColor
+    });
+  };
 
   // Super Admin Management State
   const [showModal, setShowModal] = useState(false);
@@ -182,15 +206,20 @@ export default function SubscriptionView({ isSuperAdmin = false }) {
     }
   };
 
-  const handleDeletePlan = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this plan? This may affect companies currently on this plan.")) return;
-    try {
-      await API.delete(`/subscriptions/plans/${id}`);
-      showToast("Plan deleted successfully");
-      loadData();
-    } catch (err) {
-      showToast(err.response?.data?.error || "Delete failed", "error");
-    }
+  const handleDeletePlan = (id) => {
+    askConfirm(
+      "Delete Plan",
+      "Are you sure you want to delete this plan? This may affect companies currently on this plan.",
+      async () => {
+        try {
+          await API.delete(`/subscriptions/plans/${id}`);
+          showToast("Plan deleted successfully");
+          loadData();
+        } catch (err) {
+          showToast(err.response?.data?.error || "Delete failed", "error");
+        }
+      }
+    );
   };
 
   const getExpiryDays = () => {
@@ -532,6 +561,16 @@ export default function SubscriptionView({ isSuperAdmin = false }) {
           </div>
         </div>
       </FormModal>
+
+      <ConfirmModal
+        show={confirmConfig.show}
+        onClose={() => setConfirmConfig(prev => ({ ...prev, show: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmText={confirmConfig.confirmText}
+        confirmColor={confirmConfig.confirmColor}
+      />
     </div>
   );
 }

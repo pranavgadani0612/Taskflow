@@ -66,6 +66,9 @@ export default function Dashboard() {
   const [scheduleInfo, setScheduleInfo] = useState(null);
   const [lateInstances, setLateInstances] = useState(null);
 
+  const [remainingShiftMinutes, setRemainingShiftMinutes] = useState(0);
+  const [clockOutConfirmMsg, setClockOutConfirmMsg] = useState("");
+
   const fetchTodayAttendance = async () => {
     try {
       const res = await API.get("/attendance/today");
@@ -76,6 +79,9 @@ export default function Dashboard() {
       }
       if (res.data?.late_instances) {
         setLateInstances(res.data.late_instances);
+      }
+      if (res.data?.remainingShiftMinutes !== undefined) {
+        setRemainingShiftMinutes(res.data.remainingShiftMinutes);
       }
       if (res.data?.attendance?.work_mode) {
         setWorkMode(res.data.attendance.work_mode);
@@ -91,7 +97,9 @@ export default function Dashboard() {
       const res = await API.post("/attendance/clock-in", { workMode });
       setAttendance(res.data.attendance);
       setLeaveNotice(null);
-      if (res.data?.lateNotice) {
+      if (res.data?.leaveNotice) {
+        showAlert(res.data.leaveNotice, "You Are On Leave Today", "warning");
+      } else if (res.data?.lateNotice) {
         showAlert(res.data.lateNotice, res.data.first_half_deducted ? "Half Day Applied" : "Late Arrival Recorded", res.data.first_half_deducted ? "danger" : "warning");
       }
     } catch (err) {
@@ -101,15 +109,41 @@ export default function Dashboard() {
           date: err.response.data.requireLeaveDate,
           message: errMsg
         });
+        showAlert(errMsg, "Leave Required To Clock In", "warning");
+      } else {
+        showAlert(errMsg, "Clock In Restricted", "danger");
       }
-      showAlert(errMsg, "Leave Required To Clock In", "warning");
     } finally {
       setAttLoading(false);
     }
   };
 
-  const handleClockOut = () => {
-    setShowConfirmClockOut(true);
+  const handleClockOut = async () => {
+    try {
+      setAttLoading(true);
+      // Fetch latest live attendance info before showing confirmation popup
+      const res = await API.get("/attendance/today");
+      const rem = res.data?.remainingShiftMinutes || 0;
+      setRemainingShiftMinutes(rem);
+      
+      let msg = "Are you sure you want to Clock Out for today?";
+      if (rem > 0) {
+        const h = Math.floor(rem / 60);
+        const m = Math.round(rem % 60);
+        const timeStr = h > 0 ? `${h} hrs ${m} mins` : `${m} mins`;
+        msg = `You still have ${timeStr} left in your shift. If you Clock Out now, it will be counted as a Half Day / Leave. Are you sure you want to Clock Out?`;
+      } else {
+        msg = "Are you sure you want to Clock Out for today? Make sure your daily tasks and timesheet are complete.";
+      }
+      setClockOutConfirmMsg(msg);
+      setShowConfirmClockOut(true);
+    } catch (err) {
+      console.error(err);
+      setClockOutConfirmMsg("Are you sure you want to Clock Out for today?");
+      setShowConfirmClockOut(true);
+    } finally {
+      setAttLoading(false);
+    }
   };
 
   const confirmClockOut = async () => {
@@ -118,14 +152,38 @@ export default function Dashboard() {
       setAttLoading(true);
       const res = await API.post("/attendance/clock-out");
       setAttendance(res.data.attendance);
+
+      // If user had remaining shift time, inform them gently with a notice popup
+      if (res.data?.remainingMinutes > 0) {
+        const remMins = res.data.remainingMinutes;
+        const h = Math.floor(remMins / 60);
+        const m = Math.round(remMins % 60);
+        const timeStr = h > 0 ? `${h}h ${m}m` : `${m} minutes`;
+        showAlert(
+          `You have clocked out early today. Remaining shift time was ${timeStr}. Your total worked time is ${res.data.totalHours || "0"} hrs.`,
+          "Shift Notice",
+          "info"
+        );
+      }
     } catch (err) {
-      showAlert(err.response?.data?.error || "Clock Out Failed", "Shift Notice", "warning");
+      showAlert(err.response?.data?.error || "Clock Out Failed", "Timesheet / Shift Notice", "warning");
     } finally {
       setAttLoading(false);
     }
   };
 
   const navigate = useNavigate();
+
+  // Helper: Format decimal hours to readable "X hrs Y mins" or "X mins"
+  const formatTotalHours = (val) => {
+    if (val === null || val === undefined || val === "" || isNaN(val)) return "0 mins";
+    const totalMins = Math.round(Number(val) * 60);
+    const h = Math.floor(totalMins / 60);
+    const m = totalMins % 60;
+    if (h === 0) return `${m} mins`;
+    if (m === 0) return `${h} hrs`;
+    return `${h} hrs ${m} mins`;
+  };
 
   const handleBreakToggle = () => {
     navigate("/breaks");
@@ -173,14 +231,15 @@ export default function Dashboard() {
         stable: total > 0 ? Math.round((stableCount / total) * 100) : 0
       };
 
-      let staffCount = rawStaff.length;
+      const activeStaffList = rawStaff.filter(s => (s.status || "Active").toLowerCase() === "active");
+      let staffCount = activeStaffList.length;
       let projectCount = rawProjects.length;
 
       if (selectedProject) {
         projectCount = 1;
         if (selectedProject.assignedTo && selectedProject.assignedTo.length > 0) {
           const assignedIds = selectedProject.assignedTo.map(u => u._id || u);
-          staffCount = rawStaff.filter(s => assignedIds.includes(s._id)).length;
+          staffCount = activeStaffList.filter(s => assignedIds.includes(s._id)).length;
         } else {
           staffCount = 0;
         }
@@ -391,7 +450,13 @@ export default function Dashboard() {
           gap: "12px"
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <span style={{ fontSize: "22px" }}>⚠️</span>
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "36px", height: "36px", borderRadius: "10px", background: "rgba(245, 158, 11, 0.15)", color: "#d97706" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </span>
             <div>
               <strong style={{ color: "#d97706", fontSize: "14px", display: "block" }}>Action Required Before Clock In</strong>
               <span style={{ color: "var(--text-main, #1e293b)", fontSize: "13px" }}>{leaveNotice.message}</span>
@@ -459,7 +524,7 @@ export default function Dashboard() {
                   }}
                   title={scheduleInfo.excessBreakBreakdown?.join("; ") || `+${scheduleInfo.excessBreakMinutes}m excess break`}
                 >
-                  ⏳ +{scheduleInfo.excessBreakMinutes}m Excess Break (Shift: {Math.floor(scheduleInfo.requiredShiftMinutes / 60)}h {scheduleInfo.requiredShiftMinutes % 60}m)
+                  <ClockIcon size={12} color="#b45309" style={{ marginRight: 4 }} />+{scheduleInfo.excessBreakMinutes}m Excess Break (Shift: {Math.floor(scheduleInfo.requiredShiftMinutes / 60)}h {scheduleInfo.requiredShiftMinutes % 60}m)
                 </span>
               )}
               {lateInstances && (
@@ -492,7 +557,16 @@ export default function Dashboard() {
                       : `Used ${lateInstances.used} of ${lateInstances.limit} allowed monthly late instances. Grace period is ${lateInstances.grace_minutes} mins.`
                   }
                 >
-                  {lateInstances.is_exhausted ? "🚨" : lateInstances.used > 0 ? "⚠️" : "🔔"} Late Instances: {lateInstances.used}/{lateInstances.limit} Used ({lateInstances.remaining} Left)
+                  <span style={{ display: "inline-flex", alignItems: "center", marginRight: "6px" }}>
+                    {lateInstances.is_exhausted ? (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                    ) : lateInstances.used > 0 ? (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                    ) : (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+                    )}
+                  </span>
+                  Late Instances: {lateInstances.used}/{lateInstances.limit} Used ({lateInstances.remaining} Left)
                 </span>
               )}
             </h3>
@@ -503,7 +577,7 @@ export default function Dashboard() {
                 "You haven't clocked in yet for today. Start your shift below."
               )}
               {attendance?.clock_out && (
-                <> • Clocked Out at <strong style={{ color: "#ef4444" }}>{new Date(attendance.clock_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> ({attendance.total_hours} hrs)</>
+                <> • Clocked Out at <strong style={{ color: "#ef4444" }}>{new Date(attendance.clock_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> ({formatTotalHours(attendance.total_hours)})</>
               )}
             </p>
           </div>
@@ -632,7 +706,7 @@ export default function Dashboard() {
               alignItems: "center",
               gap: "6px"
             }}>
-              <CheckIcon size={16} color="#15803d" /> Shift Completed ({attendance.total_hours} hrs)
+              <CheckIcon size={16} color="#15803d" /> Shift Completed ({formatTotalHours(attendance.total_hours)})
             </span>
           )}
         </div>
@@ -931,7 +1005,7 @@ export default function Dashboard() {
       <ConfirmModal
         show={showConfirmClockOut}
         title="Confirm Clock Out"
-        message="Are you sure you want to Clock Out for today? Make sure your daily tasks and shift hours are complete."
+        message={clockOutConfirmMsg || "Are you sure you want to Clock Out for today? Make sure your daily tasks and shift hours are complete."}
         confirmText="Yes, Clock Out"
         confirmColor="#dc2626"
         onConfirm={confirmClockOut}

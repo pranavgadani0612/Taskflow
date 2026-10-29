@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { usePermissions } from "../contexts/PermissionContext";
 import API from "../api/api";
 import { useProject } from "../contexts/ProjectContext";
 import FormModal from "../components/common/FormModal";
@@ -30,11 +31,22 @@ const SUPERADMIN_EMAIL = "gadanipranav@gmail.com";
 export default function Document() {
     const { selectedProject } = useProject();
     const { user } = useAuth();
+    const { hasPermission: ctxHasPermission } = usePermissions();
     const navigate = useNavigate();
     const isSuperAdmin = user?.email === SUPERADMIN_EMAIL || user?.role?.name === "Super Admin";
     const userRole = user?.role?.name?.toLowerCase() || "";
     const isCompanyOwner = userRole.includes("company owner") || userRole.includes("admin");
-    const canManageDocs = isSuperAdmin || isCompanyOwner; // Allow managing docs globally or per-project
+
+    const hasDocPermission = (action = "read") => {
+        if (isSuperAdmin || isCompanyOwner) return true;
+        return ctxHasPermission("document", action);
+    };
+
+    const canCreate = isSuperAdmin || isCompanyOwner || hasDocPermission("create") || hasDocPermission("all");
+    const canUpdate = isSuperAdmin || isCompanyOwner || hasDocPermission("update") || hasDocPermission("all");
+    const canDelete = isSuperAdmin || isCompanyOwner || hasDocPermission("delete") || hasDocPermission("all");
+    const canRead = isSuperAdmin || isCompanyOwner || hasDocPermission("read") || hasDocPermission("all");
+    const canManageDocs = isSuperAdmin || isCompanyOwner || hasDocPermission("all") || (canCreate && canUpdate);
     const location = useLocation();
     const params = new URLSearchParams(location.search);
     const viewDocId = params.get("view");
@@ -83,6 +95,7 @@ export default function Document() {
         content: [{ id: `p-${Date.now()}-0`, content: "" }], // Array of STABLE unique pages
     });
 
+    const [fieldErrors, setFieldErrors] = useState({});
     const editorsRef = React.useRef({}); // Changed to object mapping ID to editor instance
 
     const ckEditorEnabled = true; // Always ON
@@ -212,6 +225,7 @@ export default function Document() {
             textType: "upload",
             content: [{ id: `p-${Date.now()}`, content: "" }],
         });
+        setFieldErrors({});
         setEditId(null);
         setFocusIdx(0);
         setFullEditorMode(false);
@@ -219,7 +233,12 @@ export default function Document() {
 
     // ================= SAVE =================
     const save = async (silent = false) => {
+        if (!form.description || !form.description.trim()) {
+            showToast("Document description / title is required", "error");
+            return;
+        }
         if (isSaving) return; // Prevent concurrent saves
+        setFieldErrors({});
         if (!silent) showToast("Saving document...");
         
         setIsSaving(true);
@@ -278,7 +297,11 @@ export default function Document() {
 
         } catch (err) {
             console.error("Save error:", err);
-            if (!silent) showToast(err.response?.data?.error || err.message || "Error saving document", "error");
+            const errStr = err.response?.data?.error || err.response?.data?.message || err.message || "";
+            if (errStr.toLowerCase().includes("description") || errStr.toLowerCase().includes("title")) {
+                setFieldErrors({ description: "Plese enter description" });
+            }
+            if (!silent) showToast(errStr || "Error saving document", "error");
         } finally {
             setIsSaving(false);
         }
@@ -508,10 +531,10 @@ export default function Document() {
             <div style={{ position: "relative" }}>
                 <PageHeader
                     title={selectedProject ? `${selectedProject.name} — Documents` : "All Documents"}
-                    buttonText={canManageDocs ? "+ Add Text" : null}
-                    onButtonClick={canManageDocs ? () => setShowTextTypeDropdown(!showTextTypeDropdown) : null}
-                    secondaryButtonText={canManageDocs ? "+ Upload File" : null}
-                    onSecondaryButtonClick={canManageDocs ? () => { resetForm(); setForm(f => ({ ...f, textType: 'upload' })); setShowForm(true); } : null}
+                    buttonText={canCreate ? "+ Add Text" : null}
+                    onButtonClick={canCreate ? () => setShowTextTypeDropdown(!showTextTypeDropdown) : null}
+                    secondaryButtonText={canCreate ? "+ Upload File" : null}
+                    onSecondaryButtonClick={canCreate ? () => { resetForm(); setForm(f => ({ ...f, textType: 'upload' })); setShowForm(true); } : null}
                 />
                 
                 {showTextTypeDropdown && (
@@ -565,13 +588,23 @@ export default function Document() {
                 width={form.textType !== 'upload' ? '1000px' : '600px'}
             >
                 <div style={{ marginBottom: "15px" }}>
-                    <label style={labelStyle}>Description / Title</label>
+                    <label style={labelStyle}>Description / Title <span style={{ color: "#ef4444" }}>*</span></label>
                     <input
                         className="form-control"
                         placeholder="Enter title..."
+                        required
                         value={form.description}
-                        onChange={(e) => setForm({ ...form, description: e.target.value })}
+                        onChange={(e) => {
+                            setForm({ ...form, description: e.target.value });
+                            if (fieldErrors.description) setFieldErrors(prev => ({ ...prev, description: null }));
+                        }}
+                        style={fieldErrors.description ? { borderColor: "#ef4444" } : {}}
                     />
+                    {fieldErrors.description && (
+                        <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                            {fieldErrors.description}
+                        </div>
+                    )}
                 </div>
 
                 {isSuperAdmin && (
@@ -694,7 +727,7 @@ export default function Document() {
                     {
                         header: "File / Content",
                         align: "center",
-                        render: (val, doc) => (canManageDocs || doc.accessGranted) ? (
+                        render: (val, doc) => (canManageDocs || doc.accessGranted || canRead) ? (
                             <button
                                 onClick={() => {
                                     if (doc.textType && doc.textType !== 'upload') {
@@ -739,7 +772,7 @@ export default function Document() {
                 ]}
                 renderActions={(doc) => (
                     <div className="action-buttons">
-                         {(canManageDocs || doc.accessGranted) && (doc.file || doc.textType !== 'upload') && (
+                         {(canManageDocs || doc.accessGranted || canRead) && (doc.file || doc.textType !== 'upload') && (
                             <button className="action-btn" title="Download" onClick={() => {
                                 if (doc.textType === 'doc') {
                                     downloadAsPDF(doc);
@@ -752,7 +785,7 @@ export default function Document() {
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                             </button>
                         )}
-                        {canManageDocs && (
+                        {canUpdate && (
                             <>
                                 <button className="action-btn" title="Edit" onClick={() => {
                                     if (doc.textType !== 'upload') {
@@ -768,12 +801,14 @@ export default function Document() {
                                 }}>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                                 </button>
-                                <button className="action-btn delete" title="Delete" onClick={() => setDeleteId(doc._id)}>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                                </button>
                             </>
                         )}
-                         {!canManageDocs && !doc.accessGranted && (
+                        {canDelete && (
+                            <button className="action-btn delete" title="Delete" onClick={() => setDeleteId(doc._id)}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                            </button>
+                        )}
+                        {!canManageDocs && !doc.accessGranted && !canRead && (
                             <button className="btn btn-primary" onClick={() => requestAccess(doc._id)} disabled={doc.accessRequested || requestingDocId === doc._id} style={{ fontSize: '11px', padding: '6px 12px' }}>
                                 {doc.accessRequested ? "Pending" : "Request Access"}
                             </button>

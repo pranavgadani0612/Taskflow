@@ -3,17 +3,32 @@ const router = express.Router();
 const authMiddleware = require("../middleware/auth");
 const { pool } = require("../config/mysqlDb");
 
+const getISTNow = () => {
+  const d = new Date();
+  return new Date(d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+};
+
+const getISTToday = () => {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+};
+
 // Helper: Check if user is Super Admin or Company Owner/Admin
 const isUserAdmin = (req) => {
   const superEmail = process.env.SUPERADMIN_EMAIL || "gadanipranav@gmail.com";
   const userEmail = req.user?.email || "";
-  const roleName = req.user?.role?.name || req.user?.role || "";
+  const roleName = String(req.user?.role?.name || req.user?.role || "").toLowerCase().trim();
+  const roleId = String(req.user?.role?.id || req.user?.role?._id || req.user?.role || "").toLowerCase().trim();
+  const position = String(req.user?.position || "").toLowerCase().trim();
   return (
     userEmail.toLowerCase() === superEmail.toLowerCase() ||
-    roleName === "Super Admin" ||
-    roleName === "Company Owner" ||
-    String(roleName).toLowerCase().includes("admin") ||
-    String(roleName).toLowerCase().includes("owner")
+    roleName.includes("admin") ||
+    roleName.includes("owner") ||
+    roleName.includes("manager") ||
+    roleId === "role_owner" ||
+    roleId === "role_superadmin" ||
+    position.includes("manager") ||
+    position.includes("owner") ||
+    position.includes("admin")
   );
 };
 
@@ -21,7 +36,7 @@ const isUserAdmin = (req) => {
 router.get("/status", authMiddleware, async (req, res) => {
   try {
     const targetUserId = req.query.userId || (req.user._id ? req.user._id.toString() : req.user.id);
-    const filterDate = req.query.date || new Date().toISOString().slice(0, 10);
+    const filterDate = req.query.date || getISTToday();
 
     // Look for any active break (end_time is NULL)
     const [active] = await pool.query(
@@ -30,7 +45,7 @@ router.get("/status", authMiddleware, async (req, res) => {
     );
 
     // Look for today's completed breaks specifically (so cards know if already taken today)
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getISTToday();
     const [todayCompleted] = await pool.query(
       "SELECT * FROM break_logs WHERE user_id = ? AND date = ?",
       [targetUserId, today]
@@ -65,9 +80,19 @@ router.post("/start", authMiddleware, async (req, res) => {
     const userName = req.user.name || "Employee";
     const userEmail = req.user.email || "";
     const companyId = req.user.companyId?._id?.toString() || req.user.companyId?.toString() || "";
-    const today = new Date().toISOString().slice(0, 10);
-    const now = new Date();
+    const today = getISTToday();
+    const now = getISTNow();
     const reason = req.body.reason || "Tea / Lunch Break";
+
+    // Verify user has clocked in today before taking a break
+    const [att] = await pool.query(
+      "SELECT * FROM attendance WHERE (user_id = ? OR (user_email = ? AND user_email != '')) AND date = ? AND clock_in IS NOT NULL LIMIT 1",
+      [userId, userEmail, today]
+    );
+
+    if (att.length === 0) {
+      return res.status(400).json({ error: "You must Clock In before taking any break!" });
+    }
 
     // Check if already on an ongoing break
     const [ongoing] = await pool.query(
@@ -125,8 +150,9 @@ router.post("/start", authMiddleware, async (req, res) => {
 router.post("/end", authMiddleware, async (req, res) => {
   try {
     const userId = req.user._id ? req.user._id.toString() : req.user.id;
-    const today = new Date().toISOString().slice(0, 10);
-    const now = new Date();
+    const userEmail = req.user.email || "";
+    const today = getISTToday();
+    const now = getISTNow();
 
     // Find the active break
     const [active] = await pool.query(
@@ -183,7 +209,12 @@ router.post("/end", authMiddleware, async (req, res) => {
 router.get("/all", authMiddleware, async (req, res) => {
   try {
     const { date, userId, status } = req.query;
-    let query = "SELECT * FROM break_logs WHERE 1=1";
+    let query = `
+      SELECT b.* 
+      FROM break_logs b
+      LEFT JOIN staff s ON b.user_id = s.id OR (b.user_email = s.email AND b.user_email != '')
+      WHERE (s.status = 'Active' OR s.status IS NULL)
+    `;
     const params = [];
 
     // Filter by company unless super admin
@@ -192,26 +223,26 @@ router.get("/all", authMiddleware, async (req, res) => {
     const companyId = req.user.companyId?._id?.toString() || req.user.companyId?.toString();
 
     if (!isSuper && companyId) {
-      query += " AND company_id = ?";
+      query += " AND b.company_id = ?";
       params.push(companyId);
     }
 
     if (date) {
-      query += " AND date = ?";
+      query += " AND b.date = ?";
       params.push(date);
     }
 
     if (userId) {
-      query += " AND user_id = ?";
+      query += " AND b.user_id = ?";
       params.push(userId);
     }
 
     if (status) {
-      query += " AND status = ?";
+      query += " AND b.status = ?";
       params.push(status);
     }
 
-    query += " ORDER BY start_time DESC";
+    query += " ORDER BY b.start_time DESC";
 
     const [rows] = await pool.query(query, params);
     res.json(rows);
@@ -268,12 +299,36 @@ router.put("/:id", authMiddleware, async (req, res) => {
     }
 
     const { id } = req.params;
-    const { reason, date, start_time, end_time, duration_minutes, status } = req.body;
+    let { reason, date, start_time, end_time, duration_minutes, status } = req.body;
 
     const [existing] = await pool.query("SELECT * FROM break_logs WHERE id = ?", [id]);
     if (!existing.length) {
       return res.status(404).json({ error: "Break record not found." });
     }
+
+    const formatSqlDatetime = (val) => {
+      if (!val) return null;
+      if (typeof val === "string" && val.length === 19 && val.includes(" ")) return val;
+      const d = new Date(val);
+      if (isNaN(d.getTime())) return val;
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    };
+
+    const formattedStart = start_time !== undefined ? (start_time ? formatSqlDatetime(start_time) : null) : existing[0].start_time;
+    const formattedEnd = end_time !== undefined ? (end_time ? formatSqlDatetime(end_time) : null) : existing[0].end_time;
+    const finalDate = date || (formattedStart ? String(formattedStart).slice(0, 10) : existing[0].date);
+
+    let calcDuration = duration_minutes !== undefined ? parseInt(duration_minutes, 10) : existing[0].duration_minutes;
+    if (formattedStart && formattedEnd && (duration_minutes === undefined || duration_minutes === null)) {
+      const s = new Date(formattedStart);
+      const e = new Date(formattedEnd);
+      if (!isNaN(s.getTime()) && !isNaN(e.getTime()) && e >= s) {
+        calcDuration = Math.round((e - s) / 60000);
+      }
+    }
+
+    const finalStatus = status || existing[0].status;
 
     await pool.query(
       `UPDATE break_logs 
@@ -284,7 +339,19 @@ router.put("/:id", authMiddleware, async (req, res) => {
            duration_minutes = COALESCE(?, duration_minutes),
            status = COALESCE(?, status)
        WHERE id = ?`,
-      [reason, date, start_time, end_time, duration_minutes, status, id]
+      [reason, finalDate, formattedStart, formattedEnd, calcDuration, finalStatus, id]
+    );
+
+    // Sync to attendance table total_break_minutes
+    const targetUserId = existing[0].user_id;
+    const [allBreaks] = await pool.query(
+      "SELECT SUM(duration_minutes) as total FROM break_logs WHERE user_id = ? AND date = ? AND status != 'On Break'",
+      [targetUserId, finalDate]
+    );
+    const newTotal = (allBreaks[0] && allBreaks[0].total) || 0;
+    await pool.query(
+      "UPDATE attendance SET total_break_minutes = ? WHERE (user_id = ? OR user_email = ?) AND date = ?",
+      [newTotal, targetUserId, existing[0].user_email || "", finalDate]
     );
 
     res.json({ message: "Break log updated successfully" });
@@ -355,8 +422,16 @@ router.post("/types", authMiddleware, async (req, res) => {
     }
 
     const { name, duration_minutes, window_start, window_end } = req.body;
-    if (!name || !duration_minutes) {
-      return res.status(400).json({ error: "Break Name and Duration are required." });
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Plese enter break name" });
+    }
+    const mins = parseInt(duration_minutes);
+    if (isNaN(mins) || mins <= 0) {
+      return res.status(400).json({ error: "Plese enter duration" });
+    }
+    // B40: Enforce maximum break limit (180 mins)
+    if (mins > 180) {
+      return res.status(400).json({ error: "Break duration cannot exceed 180 minutes (3 hours)" });
     }
 
     let companyId = req.user.companyId?._id?.toString() || req.user.companyId?.toString() || null;
@@ -365,7 +440,7 @@ router.post("/types", authMiddleware, async (req, res) => {
     await pool.query(
       `INSERT INTO break_types (id, name, duration_minutes, window_start, window_end, company_id, status)
        VALUES (?, ?, ?, ?, ?, ?, 'Active')`,
-      [id, name.trim(), parseInt(duration_minutes) || 15, window_start || "00:00", window_end || "23:59", companyId]
+      [id, name.trim(), mins, window_start || "00:00", window_end || "23:59", companyId]
     );
 
     res.status(201).json({ message: "Break type created successfully", id });
@@ -383,6 +458,20 @@ router.put("/types/:id", authMiddleware, async (req, res) => {
     }
 
     const { name, duration_minutes, window_start, window_end, status } = req.body;
+    if (name !== undefined && !name.trim()) {
+      return res.status(400).json({ error: "Plese enter break name" });
+    }
+    let mins = undefined;
+    if (duration_minutes !== undefined) {
+      mins = parseInt(duration_minutes);
+      if (isNaN(mins) || mins <= 0) {
+        return res.status(400).json({ error: "Plese enter duration" });
+      }
+      if (mins > 180) {
+        return res.status(400).json({ error: "Break duration cannot exceed 180 minutes (3 hours)" });
+      }
+    }
+
     await pool.query(
       `UPDATE break_types 
        SET name = COALESCE(?, name),
@@ -391,7 +480,7 @@ router.put("/types/:id", authMiddleware, async (req, res) => {
            window_end = COALESCE(?, window_end),
            status = COALESCE(?, status)
        WHERE id = ?`,
-      [name, duration_minutes, window_start, window_end, status, req.params.id]
+      [name ? name.trim() : null, mins, window_start, window_end, status, req.params.id]
     );
 
     res.json({ message: "Break type updated successfully" });

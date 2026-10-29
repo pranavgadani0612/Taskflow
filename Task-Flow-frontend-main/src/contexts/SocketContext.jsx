@@ -3,9 +3,17 @@ import { io } from "socket.io-client";
 
 const SocketContext = createContext(null);
 
-const SOCKET_URL = window.location.hostname === "localhost"
-    ? "http://localhost:5000"
-    : "https://task-flow-backend-jiwe.onrender.com";
+const getSocketURL = () => {
+    if (import.meta.env.VITE_SOCKET_URL) return import.meta.env.VITE_SOCKET_URL;
+    const hostname = window.location.hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1") return "http://localhost:5000";
+    if (hostname.includes("devtunnels.ms")) {
+        return window.location.origin.replace("-5173", "-5000");
+    }
+    return window.location.origin;
+};
+
+const SOCKET_URL = getSocketURL();
 
 export function SocketProvider({ children }) {
     const socketRef = useRef(null);
@@ -16,12 +24,12 @@ export function SocketProvider({ children }) {
         socketRef.current = io(SOCKET_URL);
 
         socketRef.current.on("connect", () => {
-            console.log("⚡ Socket.io connected:", socketRef.current.id);
+            console.log("[Socket.io] Connected:", socketRef.current.id);
             setConnected(true);
         });
 
         socketRef.current.on("disconnect", () => {
-            console.log("❌ Socket.io disconnected");
+            console.log("[Socket.io] Disconnected");
             setConnected(false);
         });
 

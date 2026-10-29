@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/auth");
-const { pool } = require("../config/mysqlDb");
+const { pool, logAudit } = require("../config/mysqlDb");
 const crypto = require("crypto");
 
 // Helper: Check if user is Super Admin or Company Owner
@@ -66,7 +66,13 @@ router.get("/", authMiddleware, async (req, res) => {
 
     let rows;
     if (isSuper) {
-      [rows] = await pool.query("SELECT * FROM internal_tickets ORDER BY created_at DESC");
+      [rows] = await pool.query(`
+        SELECT t.* 
+        FROM internal_tickets t
+        LEFT JOIN staff s ON t.user_id = s.id OR (t.user_email = s.email AND t.user_email != '')
+        WHERE (s.status = 'Active' OR s.status IS NULL)
+        ORDER BY t.created_at DESC
+      `);
     } else {
       [rows] = await pool.query("SELECT * FROM internal_tickets WHERE user_id = ? ORDER BY created_at DESC", [
         String(userId),
@@ -85,8 +91,14 @@ router.post("/", authMiddleware, async (req, res) => {
   try {
     const { category, item_type, title, description, priority } = req.body;
 
-    if (!title || !description || !category) {
-      return res.status(400).json({ error: "Category, title, and description are required." });
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: "Plese enter ticket title", field: "title" });
+    }
+    if (!description || !description.trim()) {
+      return res.status(400).json({ error: "Plese enter description", field: "description" });
+    }
+    if (!category) {
+      return res.status(400).json({ error: "Plese enter category", field: "category" });
     }
 
     const id = crypto.randomUUID();
@@ -118,6 +130,19 @@ router.post("/", authMiddleware, async (req, res) => {
     ]);
 
     const [[newTicket]] = await pool.query("SELECT * FROM internal_tickets WHERE id = ?", [id]);
+
+    await logAudit({
+      companyId: req.user?.companyId?._id || req.user?.companyId || null,
+      actorId: String(userId),
+      actorName: userName,
+      actorRole: req.user?.role?.name || "Staff",
+      module: "tickets",
+      action: "ticket_created",
+      targetId: id,
+      targetName: `${ticketNumber} - ${title}`,
+      details: { category, item_type, priority },
+      ipAddress: req.ip
+    });
 
     // Emit live WebSocket notification if available
     const io = req.app.get("io");
@@ -153,6 +178,19 @@ router.put("/:id/status", authMiddleware, async (req, res) => {
 
     const [[updatedTicket]] = await pool.query("SELECT * FROM internal_tickets WHERE id = ?", [id]);
 
+    await logAudit({
+      companyId: req.user?.companyId?._id || req.user?.companyId || null,
+      actorId: req.user?.id || req.user?._id || "system",
+      actorName: req.user?.name || "Admin",
+      actorRole: req.user?.role?.name || "Admin",
+      module: "tickets",
+      action: "ticket_status_updated",
+      targetId: id,
+      targetName: updatedTicket?.ticket_number || id,
+      details: { status, admin_remarks, assigned_to },
+      ipAddress: req.ip
+    });
+
     const io = req.app.get("io");
     if (io) {
       io.emit("ticketUpdated", updatedTicket);
@@ -161,6 +199,46 @@ router.put("/:id/status", authMiddleware, async (req, res) => {
     res.json({ message: "Ticket updated successfully", ticket: updatedTicket });
   } catch (err) {
     console.error("Error updating ticket status:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 5. DELETE TICKET (Admin action)
+router.delete("/:id", authMiddleware, async (req, res) => {
+  try {
+    if (!isSuperAdminOrOwner(req)) {
+      return res.status(403).json({ error: "Access Denied: Only Admin can delete tickets." });
+    }
+
+    const { id } = req.params;
+    const [[ticket]] = await pool.query("SELECT * FROM internal_tickets WHERE id = ?", [id]);
+    if (!ticket) {
+      return res.status(404).json({ error: "Ticket not found." });
+    }
+
+    await pool.query("DELETE FROM internal_tickets WHERE id = ?", [id]);
+
+    await logAudit({
+      companyId: req.user?.companyId?._id || req.user?.companyId || null,
+      actorId: req.user?.id || req.user?._id || "system",
+      actorName: req.user?.name || "Admin",
+      actorRole: req.user?.role?.name || "Admin",
+      module: "tickets",
+      action: "ticket_deleted",
+      targetId: id,
+      targetName: ticket.ticket_number || ticket.title,
+      details: { title: ticket.title, category: ticket.category },
+      ipAddress: req.ip
+    });
+
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("ticketDeleted", { id });
+    }
+
+    res.json({ message: "Ticket deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting ticket:", err);
     res.status(500).json({ error: err.message });
   }
 });

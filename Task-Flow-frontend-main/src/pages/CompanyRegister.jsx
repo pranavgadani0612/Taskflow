@@ -35,6 +35,7 @@ export default function CompanyRegister() {
     const [logoPreview, setLogoPreview] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState({});
 
     const [form, setForm] = useState({
         companyName: "",
@@ -57,6 +58,9 @@ export default function CompanyRegister() {
 
     const handleChange = (e) => {
         const { name, value } = e.target;
+        if (fieldErrors[name]) {
+            setFieldErrors(prev => ({ ...prev, [name]: null }));
+        }
         if (name.toLowerCase().includes("phone") || name === "pincode") {
             const onlyNums = value.replace(/[^0-9]/g, "");
             const maxLen = name === "pincode" ? 6 : 10;
@@ -80,7 +84,11 @@ export default function CompanyRegister() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (form.password !== form.confirmPassword) return showToast("Passwords do not match", "error");
+        setFieldErrors({});
+        if (form.password !== form.confirmPassword) {
+            setFieldErrors(prev => ({ ...prev, confirmPassword: "Passwords do not match" }));
+            return showToast("Passwords do not match", "error");
+        }
 
         setLoading(true);
         try {
@@ -104,7 +112,23 @@ export default function CompanyRegister() {
             showToast("Registration Successful!");
             navigate("/profile?tab=subscription&new=1");
         } catch (err) {
-            showToast(err.response?.data?.error || "Registration failed", "error");
+            const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || "Registration failed";
+            if (errMsg.toLowerCase().includes("company name")) {
+                setFieldErrors(prev => ({ ...prev, companyName: "Plese enter company name" }));
+            }
+            if (errMsg.toLowerCase().includes("email")) {
+                setFieldErrors(prev => ({ ...prev, email: "Plese enter email" }));
+            }
+            if (errMsg.toLowerCase().includes("contact person name") || errMsg.toLowerCase().includes("contact person")) {
+                setFieldErrors(prev => ({ ...prev, contactPersonName: "Plese enter contact person name" }));
+            }
+            if (errMsg.toLowerCase().includes("phone")) {
+                setFieldErrors(prev => ({ ...prev, contactPersonPhone: "Plese enter contact phone" }));
+            }
+            if (errMsg.toLowerCase().includes("password")) {
+                setFieldErrors(prev => ({ ...prev, password: "Plese enter password" }));
+            }
+            showToast(errMsg, "error");
         } finally {
             setLoading(false);
         }
@@ -119,11 +143,12 @@ export default function CompanyRegister() {
                 <div style={{ position: "absolute", bottom: "-10%", right: "-20%", width: "600px", height: "600px", background: "radial-gradient(circle, rgba(168,85,247,0.25) 0%, transparent 70%)", filter: "blur(60px)", animation: "floatHero 15s infinite alternate-reverse" }}></div>
 
                 <div style={{ position: "relative", zIndex: 10 }}>
-                    <div className="landing-logo" style={{ color: "#fff", marginBottom: "40px", fontSize: "22px", letterSpacing: "1px" }}>
-                        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                        </svg>
-                        TaskFlow
+                    <div style={{ background: "rgba(255,255,255,0.95)", padding: "8px 18px", borderRadius: "12px", display: "inline-block", marginBottom: "36px" }}>
+                        <img 
+                            src="/padhya-logo.webp" 
+                            alt="Padhya Software Technologies" 
+                            style={{ height: "34px", display: "block" }} 
+                        />
                     </div>
 
                     <div style={{
@@ -185,13 +210,25 @@ export default function CompanyRegister() {
                     <h2 style={{ fontSize: "30px", letterSpacing: "-1px", color: "#0f172a", marginBottom: "8px", fontWeight: "900" }}>Register Organization</h2>
                     <p style={{ color: "#64748b", fontSize: "14px", marginBottom: "30px" }}>Complete the details below to initialize your admin profile.</p>
 
-                    <form onSubmit={handleSubmit}>
+                    <form noValidate onSubmit={handleSubmit}>
 
                         <SectionBadge number="1" title="Company Details" />
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                             <div className="form-group" style={{ gridColumn: "span 2" }}>
-                                <label className="input-label">Company Legal Name *</label>
-                                <input className="input-field" name="companyName" value={form.companyName} onChange={handleChange} required placeholder="e.g. Acme Innovations Pvt Ltd" />
+                                <label className="input-label">Company Legal Name <span style={{ color: "#ef4444" }}>*</span></label>
+                                <input
+                                    className="input-field"
+                                    name="companyName"
+                                    value={form.companyName}
+                                    onChange={handleChange}
+                                    placeholder="e.g. Acme Innovations Pvt Ltd"
+                                    style={fieldErrors.companyName ? { borderColor: "#ef4444" } : {}}
+                                />
+                                {fieldErrors.companyName && (
+                                    <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                                        {fieldErrors.companyName}
+                                    </div>
+                                )}
                             </div>
                             <div className="form-group">
                                 <label className="input-label">GST Number</label>
@@ -202,24 +239,75 @@ export default function CompanyRegister() {
                                 <input className="input-field" name="panNumber" value={form.panNumber} onChange={handleChange} maxLength={10} placeholder="ABCDE1234F" />
                             </div>
                             <div className="form-group" style={{ gridColumn: "span 2" }}>
-                                <label className="input-label">Company Email (Workspace Admin Login) *</label>
-                                <input className="input-field" type="email" name="email" value={form.email} onChange={handleChange} required placeholder="admin@yourcompany.com" style={{ background: "#e0e7ff", borderColor: "#c7d2fe", color: "#312e81" }} />
+                                <label className="input-label">Company Email (Workspace Admin Login) <span style={{ color: "#ef4444" }}>*</span></label>
+                                <input
+                                    className="input-field"
+                                    type="email"
+                                    name="email"
+                                    value={form.email}
+                                    onChange={handleChange}
+                                    placeholder="admin@yourcompany.com"
+                                    style={{
+                                        background: "#e0e7ff",
+                                        borderColor: fieldErrors.email ? "#ef4444" : "#c7d2fe",
+                                        color: "#312e81"
+                                    }}
+                                />
+                                {fieldErrors.email && (
+                                    <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                                        {fieldErrors.email}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                         <SectionBadge number="2" title="Contact Person & Security" />
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", background: "#f1f5f9", padding: "12px", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
                             <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label className="input-label">Manager / Admin Name *</label>
-                                <input className="input-field" style={{ background: "#fff" }} name="contactPersonName" value={form.contactPersonName} onChange={handleChange} required placeholder="John Doe" />
+                                <label className="input-label">Manager / Admin Name <span style={{ color: "#ef4444" }}>*</span></label>
+                                <input
+                                    className="input-field"
+                                    style={{ background: "#fff", ...(fieldErrors.contactPersonName ? { borderColor: "#ef4444" } : {}) }}
+                                    name="contactPersonName"
+                                    value={form.contactPersonName}
+                                    onChange={handleChange}
+                                    placeholder="John Doe"
+                                />
+                                {fieldErrors.contactPersonName && (
+                                    <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                                        {fieldErrors.contactPersonName}
+                                    </div>
+                                )}
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label className="input-label">Contact Phone *</label>
-                                <input className="input-field" style={{ background: "#fff" }} type="tel" name="contactPersonPhone" value={form.contactPersonPhone} onChange={handleChange} required maxLength={10} placeholder="10 Digit Number" />
+                                <label className="input-label">Contact Phone <span style={{ color: "#ef4444" }}>*</span></label>
+                                <input
+                                    className="input-field"
+                                    style={{ background: "#fff", ...(fieldErrors.contactPersonPhone ? { borderColor: "#ef4444" } : {}) }}
+                                    type="tel"
+                                    name="contactPersonPhone"
+                                    value={form.contactPersonPhone}
+                                    onChange={handleChange}
+                                    maxLength={10}
+                                    placeholder="10 Digit Number"
+                                />
+                                {fieldErrors.contactPersonPhone && (
+                                    <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                                        {fieldErrors.contactPersonPhone}
+                                    </div>
+                                )}
                             </div>
                             <div className="form-group" style={{ marginBottom: 0, position: "relative" }}>
-                                <label className="input-label">Admin Password *</label>
-                                <input className="input-field" style={{ background: "#fff", paddingRight: "40px" }} type={showPassword ? "text" : "password"} name="password" value={form.password} onChange={handleChange} required placeholder="••••••••" />
+                                <label className="input-label">Admin Password <span style={{ color: "#ef4444" }}>*</span></label>
+                                <input
+                                    className="input-field"
+                                    style={{ background: "#fff", paddingRight: "40px", ...(fieldErrors.password ? { borderColor: "#ef4444" } : {}) }}
+                                    type={showPassword ? "text" : "password"}
+                                    name="password"
+                                    value={form.password}
+                                    onChange={handleChange}
+                                    placeholder="••••••••"
+                                />
                                 <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: "absolute", right: "12px", top: "32px", background: "none", border: "none", cursor: "pointer", color: "#6366f1", display: "flex", alignItems: "center" }}>
                                     {showPassword ? (
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -227,10 +315,23 @@ export default function CompanyRegister() {
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                                     )}
                                 </button>
+                                {fieldErrors.password && (
+                                    <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                                        {fieldErrors.password}
+                                    </div>
+                                )}
                             </div>
                             <div className="form-group" style={{ marginBottom: 0, position: "relative" }}>
-                                <label className="input-label">Confirm Password *</label>
-                                <input className="input-field" style={{ background: "#fff", paddingRight: "40px" }} type={showConfirmPassword ? "text" : "password"} name="confirmPassword" value={form.confirmPassword} onChange={handleChange} required placeholder="••••••••" />
+                                <label className="input-label">Confirm Password <span style={{ color: "#ef4444" }}>*</span></label>
+                                <input
+                                    className="input-field"
+                                    style={{ background: "#fff", paddingRight: "40px", ...(fieldErrors.confirmPassword ? { borderColor: "#ef4444" } : {}) }}
+                                    type={showConfirmPassword ? "text" : "password"}
+                                    name="confirmPassword"
+                                    value={form.confirmPassword}
+                                    onChange={handleChange}
+                                    placeholder="••••••••"
+                                />
                                 <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} style={{ position: "absolute", right: "12px", top: "32px", background: "none", border: "none", cursor: "pointer", color: "#6366f1", display: "flex", alignItems: "center" }}>
                                     {showConfirmPassword ? (
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -238,6 +339,11 @@ export default function CompanyRegister() {
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                                     )}
                                 </button>
+                                {fieldErrors.confirmPassword && (
+                                    <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                                        {fieldErrors.confirmPassword}
+                                    </div>
+                                )}
                             </div>
                         </div>
 

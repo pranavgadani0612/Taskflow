@@ -10,10 +10,16 @@ export default function ForgotPassword() {
     const { showToast } = useToast();
     const [email, setEmail] = useState("");
     const [loading, setLoading] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState({});
     const [success, setSuccess] = useState(false);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (!email || !email.trim()) {
+            setFieldErrors({ email: "Email address is required" });
+            return;
+        }
+        setFieldErrors({});
         setLoading(true);
         try {
             await API.post("/auth/forgot-password", { email });
@@ -30,11 +36,12 @@ export default function ForgotPassword() {
         <div className="login-page">
             {/* STICKY HEADER */}
             <header className="landing-header animate-fade-down" style={{ opacity: 1 }}>
-                <div className="landing-logo">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                    </svg>
-                    <span>TaskFlow</span>
+                <div className="landing-logo" style={{ cursor: "pointer" }} onClick={() => navigate("/login")}>
+                    <img 
+                        src="/padhya-logo.webp" 
+                        alt="Padhya Software Technologies" 
+                        style={{ height: "42px", maxWidth: "220px", objectFit: "contain" }} 
+                    />
                 </div>
                 <div className="header-login-container">
                     <button onClick={() => navigate("/login")} className="header-login-btn">Sign In</button>
@@ -93,8 +100,17 @@ export default function ForgotPassword() {
                                     placeholder="name@company.com"
                                     required
                                     value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
+                                    onChange={(e) => {
+                                        setEmail(e.target.value);
+                                        if (fieldErrors.email) setFieldErrors({});
+                                    }}
+                                    style={fieldErrors.email ? { borderColor: "#ef4444", background: "#fff5f5" } : {}}
                                 />
+                                {fieldErrors.email && (
+                                    <span style={{ color: "#ef4444", fontSize: "12px", marginTop: "5px", display: "block", fontWeight: "500" }}>
+                                        {fieldErrors.email}
+                                    </span>
+                                )}
                             </div>
 
                             <button className="submit-button" type="submit" disabled={loading} style={{ marginTop: "10px" }}>

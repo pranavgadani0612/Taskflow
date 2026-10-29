@@ -9,6 +9,7 @@ import { SelectField, TextInput } from "../components/common/FormFields";
 import { useAuth } from "../contexts/AuthContext";
 import { usePermissions } from "../contexts/PermissionContext";
 import { useCompany } from "../contexts/CompanyContext";
+import { IconStar } from "../components/common/Icons";
 
 export default function Staff() {
   const [staff, setStaff] = useState([]);
@@ -36,6 +37,7 @@ export default function Staff() {
     status: "Active",
     role: "",
   });
+  const [fieldErrors, setFieldErrors] = useState({});
 
   // Toast notification
   const showToast = (msg, type = "success") => {
@@ -45,9 +47,9 @@ export default function Staff() {
 
   const [ratingMap, setRatingMap] = useState({});
 
-  // LOAD STAFF
+  // LOAD STAFF (Include inactive so admin can manage or activate them)
   const load = async () => {
-    const res = await API.get("/staff");
+    const res = await API.get("/staff?includeInactive=true");
     setStaff(res.data.staff || res.data);
   };
 
@@ -83,62 +85,52 @@ export default function Staff() {
 
   // SAVE
   const save = async () => {
-    // Validation
+    // Client-side validation: Populate inline field errors directly under inputs
+    const errors = {};
     const nameRegex = /^[a-zA-Z\s]+$/;
-    if (!form.name.trim()) {
-      showToast("Name is required", "error");
-      return;
-    }
-    if (!nameRegex.test(form.name.trim())) {
-      showToast("Name must contain only letters and spaces", "error");
-      return;
+    if (!form.name || !form.name.trim()) {
+      errors.name = "Plese enter name";
+    } else if (!nameRegex.test(form.name.trim())) {
+      errors.name = "Name must contain only letters and spaces";
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!form.email.trim()) {
-      showToast("Email is required", "error");
-      return;
-    }
-    if (form.email.length > 255) {
-      showToast("Email must be less than 255 characters", "error");
-      return;
-    }
-    if (!emailRegex.test(form.email.trim())) {
-      showToast("Please enter a valid email address", "error");
-      return;
+    if (!form.email || !form.email.trim()) {
+      errors.email = "Plese enter email";
+    } else if (form.email.length > 255) {
+      errors.email = "Email must be less than 255 characters";
+    } else if (!emailRegex.test(form.email.trim())) {
+      errors.email = "Please enter a valid email address";
     }
 
     const phoneRegex = /^\d{10}$/;
     if (!form.phone || !String(form.phone).trim()) {
-      showToast("Phone is required", "error");
-      return;
-    }
-    if (!phoneRegex.test(String(form.phone).trim())) {
-      showToast("Phone must contain 10 digits only", "error");
-      return;
-    }
-
-    if (!form.status) {
-      showToast("Please select a status", "error");
-      return;
-    }
-
-    if (!form.role) {
-      showToast("Please assign a role", "error");
-      return;
+      errors.phone = "Plese enter phone";
+    } else if (!phoneRegex.test(String(form.phone).trim())) {
+      errors.phone = "Phone must contain 10 digits only";
     }
 
     if (!editId && (!form.password || form.password.trim().length < 6)) {
-      showToast("Password is required (minimum 6 characters)", "error");
-      return;
+      errors.password = "Plese enter password";
+    } else if (editId && form.password && form.password.trim().length < 6) {
+      errors.password = "Password must be at least 6 characters";
     }
 
-    if (editId && form.password && form.password.trim().length < 6) {
-      showToast("Password must be at least 6 characters", "error");
+    if (!form.status) {
+      errors.status = "Plese enter status";
+    }
+
+    if (!form.role) {
+      errors.role = "Plese enter role";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
 
     try {
+      setFieldErrors({});
       if (editId) {
         const originalStaff = staff.find(s => s._id === editId);
         if (originalStaff) {
@@ -174,7 +166,21 @@ export default function Staff() {
       load();
     } catch (error) {
       console.error("Error saving staff:", error);
-      showToast("Error saving staff", "error");
+      const serverMsg = error.response?.data?.error || error.response?.data?.message;
+      const field = error.response?.data?.field;
+      if (field && serverMsg) {
+        setFieldErrors({ [field]: serverMsg });
+      } else if (serverMsg && serverMsg.toLowerCase().includes("email")) {
+        setFieldErrors({ email: serverMsg });
+      } else if (serverMsg && serverMsg.toLowerCase().includes("name")) {
+        setFieldErrors({ name: serverMsg });
+      } else if (serverMsg && serverMsg.toLowerCase().includes("password")) {
+        setFieldErrors({ password: serverMsg });
+      } else if (serverMsg && serverMsg.toLowerCase().includes("phone")) {
+        setFieldErrors({ phone: serverMsg });
+      } else {
+        showToast(serverMsg || "Error saving staff", "error");
+      }
     }
   };
 
@@ -189,6 +195,7 @@ export default function Staff() {
       role: "",
     });
     setEditId(null);
+    setFieldErrors({});
   };
 
   // EDIT
@@ -225,7 +232,26 @@ export default function Staff() {
 
   // TABLE COLUMNS
   const columns = [
-    { header: "Name", key: "name" },
+    { 
+      header: "Name", 
+      key: "name",
+      render: (v) => (
+        <span 
+          title={v} 
+          style={{ 
+            display: "inline-block", 
+            maxWidth: "180px", 
+            overflow: "hidden", 
+            textOverflow: "ellipsis", 
+            whiteSpace: "nowrap",
+            verticalAlign: "middle",
+            fontWeight: "600"
+          }}
+        >
+          {v}
+        </span>
+      )
+    },
     { header: "Email", key: "email" },
     { header: "Phone", key: "phone" },
     {
@@ -246,7 +272,7 @@ export default function Staff() {
         if (!score) return <span style={{ color: "var(--text-muted)", fontSize: "12px" }}>No reviews</span>;
         return (
           <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontWeight: "700", color: "#f59e0b" }}>
-            ★ {score}
+            <IconStar size={13} color="#f59e0b" /> {score}
           </span>
         );
       }
@@ -279,7 +305,11 @@ export default function Staff() {
               type="text"
               placeholder="Enter name"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, name: e.target.value });
+                if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: "" }));
+              }}
+              error={fieldErrors.name}
               required
             />
 
@@ -288,8 +318,12 @@ export default function Staff() {
               type="email"
               placeholder="Enter email"
               value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, email: e.target.value });
+                if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: "" }));
+              }}
               maxLength={255}
+              error={fieldErrors.email}
               required
             />
 
@@ -298,8 +332,12 @@ export default function Staff() {
               type="text"
               placeholder="Enter phone (10 digits)"
               value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '') })}
+              onChange={(e) => {
+                setForm({ ...form, phone: e.target.value.replace(/\D/g, '') });
+                if (fieldErrors.phone) setFieldErrors(prev => ({ ...prev, phone: "" }));
+              }}
               maxLength={10}
+              error={fieldErrors.phone}
               required
             />
 
@@ -308,26 +346,38 @@ export default function Staff() {
               type="password"
               placeholder={editId ? "Enter new password (optional)" : "Enter password (min 6 characters)"}
               value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, password: e.target.value });
+                if (fieldErrors.password) setFieldErrors(prev => ({ ...prev, password: "" }));
+              }}
+              error={fieldErrors.password}
               required={!editId}
             />
 
             <SelectField
               label="Status"
               value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, status: e.target.value });
+                if (fieldErrors.status) setFieldErrors(prev => ({ ...prev, status: "" }));
+              }}
               options={[
                 { value: "", label: "Select Status" },
                 { value: "Active", label: "Active" },
                 { value: "Inactive", label: "Inactive" },
               ]}
+              error={fieldErrors.status}
               required
             />
 
             <SelectField
               label="Role"
               value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, role: e.target.value });
+                if (fieldErrors.role) setFieldErrors(prev => ({ ...prev, role: "" }));
+              }}
+              error={fieldErrors.role}
               required
             >
               <option value="">Select a Role</option>

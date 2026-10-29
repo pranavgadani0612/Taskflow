@@ -27,6 +27,11 @@ module.exports = async (req, res, next) => {
     }
 
     const row = rows[0];
+
+    if (row.status && row.status.toLowerCase() === "inactive") {
+      res.clearCookie("token", { httpOnly: true, sameSite: "none", secure: true });
+      return res.status(403).json({ error: "Your account has been deactivated. You have been logged out.", inactive: true });
+    }
     let parsedPerms = [];
     if (row.role_permissions) {
       try {

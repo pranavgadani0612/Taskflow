@@ -19,6 +19,7 @@ import {
 } from "../../components/common/Icons";
 import AlertModal from "../../components/common/AlertModal";
 import ConfirmModal from "../../components/common/ConfirmModal";
+import ForgotPunchOutAlert from "../../components/attendance/ForgotPunchOutAlert";
 import "../../style/main.css";
 
 export default function ProjectManagerDashboard() {
@@ -47,8 +48,12 @@ export default function ProjectManagerDashboard() {
   const [attLoading, setAttLoading] = useState(false);
   const [workMode, setWorkMode] = useState("Office");
   const [leaveNotice, setLeaveNotice] = useState(null);
+  const [scheduleInfo, setScheduleInfo] = useState(null);
+  const [lateInstances, setLateInstances] = useState(null);
+  const [elapsedTime, setElapsedTime] = useState("00:00:00");
   const [alertInfo, setAlertInfo] = useState({ show: false, title: "", message: "", type: "info" });
   const [showConfirmClockOut, setShowConfirmClockOut] = useState(false);
+  const [clockOutConfirmMsg, setClockOutConfirmMsg] = useState("");
 
   const showAlert = (message, title = "Notice", type = "warning") => {
     setAlertInfo({ show: true, title, message, type });
@@ -60,6 +65,12 @@ export default function ProjectManagerDashboard() {
       const res = await API.get("/attendance/today");
       setAttendance(res.data?.attendance || null);
       setLeaveNotice(res.data?.requiredLeaveNotice || null);
+      if (res.data?.schedule) {
+        setScheduleInfo(res.data.schedule);
+      }
+      if (res.data?.monthlyInstances) {
+        setLateInstances(res.data.monthlyInstances);
+      }
       if (res.data?.attendance?.work_mode) {
         setWorkMode(res.data.attendance.work_mode);
       }
@@ -74,6 +85,9 @@ export default function ProjectManagerDashboard() {
       const res = await API.post("/attendance/clock-in", { workMode });
       setAttendance(res.data.attendance);
       setLeaveNotice(null);
+      if (res.data?.leaveNotice) {
+        showAlert(res.data.leaveNotice, "You Are On Leave Today", "warning");
+      }
     } catch (err) {
       const errMsg = err.response?.data?.error || "Clock In Failed";
       if (err.response?.data?.requireLeaveDate) {
@@ -81,15 +95,36 @@ export default function ProjectManagerDashboard() {
           date: err.response.data.requireLeaveDate,
           message: errMsg
         });
+        showAlert(errMsg, "Leave Required To Clock In", "warning");
+      } else {
+        showAlert(errMsg, "Clock In Restricted", "danger");
       }
-      showAlert(errMsg, "Leave Required To Clock In", "warning");
     } finally {
       setAttLoading(false);
     }
   };
 
-  const handleClockOut = () => {
-    setShowConfirmClockOut(true);
+  const handleClockOut = async () => {
+    try {
+      setAttLoading(true);
+      const res = await API.get("/attendance/today");
+      const rem = res.data?.remainingShiftMinutes || 0;
+      let msg = "Are you sure you want to end your shift for today? Your total hours and timesheet records will be saved.";
+      if (rem > 0) {
+        const h = Math.floor(rem / 60);
+        const m = Math.round(rem % 60);
+        const timeStr = h > 0 ? `${h} hrs ${m} mins` : `${m} mins`;
+        msg = `You still have ${timeStr} left in your shift. If you Clock Out now, it will be counted as a Half Day / Leave. Are you sure you want to Clock Out?`;
+      }
+      setClockOutConfirmMsg(msg);
+      setShowConfirmClockOut(true);
+    } catch (err) {
+      console.error(err);
+      setClockOutConfirmMsg("Are you sure you want to end your shift for today?");
+      setShowConfirmClockOut(true);
+    } finally {
+      setAttLoading(false);
+    }
   };
 
   const confirmClockOut = async () => {
@@ -164,6 +199,40 @@ export default function ProjectManagerDashboard() {
     fetchTodayAttendance();
   }, [loadPMData, fetchTodayAttendance]);
 
+  // Live Timer for clocked-in Project Manager
+  useEffect(() => {
+    let interval = null;
+    if (attendance?.clock_in && !attendance?.clock_out) {
+      const start = new Date(attendance.clock_in).getTime();
+      const updateTimer = () => {
+        const now = Date.now();
+        const diffSecs = Math.max(0, Math.floor((now - start) / 1000));
+        const hrs = String(Math.floor(diffSecs / 3600)).padStart(2, "0");
+        const mins = String(Math.floor((diffSecs % 3600) / 60)).padStart(2, "0");
+        const secs = String(diffSecs % 60).padStart(2, "0");
+        setElapsedTime(`${hrs}:${mins}:${secs}`);
+      };
+      updateTimer();
+      interval = setInterval(updateTimer, 1000);
+    } else if (attendance?.clock_out && attendance?.total_hours !== undefined && attendance?.total_hours !== null) {
+      const totalMins = Math.round(Number(attendance.total_hours) * 60);
+      const h = Math.floor(totalMins / 60);
+      const m = totalMins % 60;
+      if (h === 0) {
+        setElapsedTime(`${m} mins`);
+      } else if (m === 0) {
+        setElapsedTime(`${h} hrs`);
+      } else {
+        setElapsedTime(`${h} hrs ${m} mins`);
+      }
+    } else {
+      setElapsedTime("00:00:00");
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [attendance]);
+
   // Real-time synchronization
   useEffect(() => {
     if (!socket) return;
@@ -192,7 +261,8 @@ export default function ProjectManagerDashboard() {
 
   return (
     <div className="task-page" style={{ padding: "28px", maxWidth: "1600px", margin: "0 auto" }}>
-      {/* 🚀 MODERN HERO HEADER FOR PROJECT MANAGER */}
+      <ForgotPunchOutAlert />
+      {/* MODERN HERO HEADER FOR PROJECT MANAGER */}
       <div
         style={{
           background: "linear-gradient(135deg, #090d16 0%, #0f172a 50%, #1e1b4b 100%)",
@@ -225,7 +295,7 @@ export default function ProjectManagerDashboard() {
                 border: "1px solid rgba(99, 102, 241, 0.35)",
               }}
             >
-              ✦ Project Manager Workspace
+              Project Manager Workspace
             </span>
             <span style={{ fontSize: "12px", color: "#94a3b8" }}>
               • Live Team Synchronized
@@ -298,7 +368,7 @@ export default function ProjectManagerDashboard() {
         </div>
       </div>
 
-      {/* ⚠️ REQUIRED LEAVE NOTICE BANNER (IF MISSED CLOCK OUT) */}
+      {/* REQUIRED LEAVE NOTICE BANNER (IF MISSED CLOCK OUT) */}
       {leaveNotice && (
         <div style={{
           background: "rgba(245, 158, 11, 0.12)",
@@ -313,7 +383,13 @@ export default function ProjectManagerDashboard() {
           gap: "12px"
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <span style={{ fontSize: "22px" }}>⚠️</span>
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "36px", height: "36px", borderRadius: "10px", background: "rgba(245, 158, 11, 0.15)", color: "#d97706" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </span>
             <div>
               <strong style={{ color: "#d97706", fontSize: "14px", display: "block" }}>Action Required Before Clock In</strong>
               <span style={{ color: "var(--text-main, #1e293b)", fontSize: "13px" }}>{leaveNotice.message}</span>
@@ -337,7 +413,7 @@ export default function ProjectManagerDashboard() {
         </div>
       )}
 
-      {/* ⏱️ SHIFT PUNCH / ATTENDANCE WIDGET */}
+      {/* SHIFT PUNCH / ATTENDANCE WIDGET */}
       <div style={{
         background: "var(--ui-surface, #ffffff)",
         borderRadius: "20px",
@@ -351,35 +427,95 @@ export default function ProjectManagerDashboard() {
         flexWrap: "wrap",
         gap: "18px"
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <div style={{
-            width: "50px",
-            height: "50px",
-            borderRadius: "14px",
-            background: attendance?.clock_in && !attendance?.clock_out ? "rgba(34, 197, 94, 0.15)" : "var(--ui-bg, #f1f5f9)",
-            color: attendance?.clock_in && !attendance?.clock_out ? "#22c55e" : "var(--text-muted, #64748b)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            border: "1px solid var(--ui-border, #e2e8f0)"
-          }}>
-            <ClockIcon size={24} color="currentColor" />
+        <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            <div style={{
+              width: "50px",
+              height: "50px",
+              borderRadius: "14px",
+              background: attendance?.clock_in && !attendance?.clock_out ? "rgba(34, 197, 94, 0.15)" : "var(--ui-bg, #f1f5f9)",
+              color: attendance?.clock_in && !attendance?.clock_out ? "#22c55e" : "var(--text-muted, #64748b)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "1px solid var(--ui-border, #e2e8f0)"
+            }}>
+              <ClockIcon size={24} color="currentColor" />
+            </div>
+            <div>
+              <h3 style={{ margin: 0, fontSize: "17px", fontWeight: "800", color: "var(--text-main, #1e293b)" }}>
+                Shift Punch & Daily Attendance
+              </h3>
+              <p style={{ margin: "2px 0 0", color: "var(--text-muted, #64748b)", fontSize: "13px" }}>
+                {attendance?.clock_in ? (
+                  <>Clocked In at <strong style={{ color: "#22c55e" }}>{new Date(attendance.clock_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> ({attendance.work_mode})</>
+                ) : (
+                  "You haven't clocked in yet for today. Start your shift below."
+                )}
+                {attendance?.clock_out && (
+                  <> • Clocked Out at <strong style={{ color: "#ef4444" }}>{new Date(attendance.clock_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> ({attendance.total_hours} hrs)</>
+                )}
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 style={{ margin: 0, fontSize: "17px", fontWeight: "800", color: "var(--text-main, #1e293b)" }}>
-              Shift Punch & Daily Attendance
-            </h3>
-            <p style={{ margin: "2px 0 0", color: "var(--text-muted, #64748b)", fontSize: "13px" }}>
-              {attendance?.clock_in ? (
-                <>Clocked In at <strong style={{ color: "#22c55e" }}>{new Date(attendance.clock_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> ({attendance.work_mode})</>
-              ) : (
-                "You haven't clocked in yet for today. Start your shift below."
-              )}
-              {attendance?.clock_out && (
-                <> • Clocked Out at <strong style={{ color: "#ef4444" }}>{new Date(attendance.clock_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> ({attendance.total_hours} hrs)</>
-              )}
-            </p>
-          </div>
+
+          {/* LIVE ELAPSED WORKING TIMER & SHIFT BADGES */}
+          {attendance?.clock_in && (
+            <div style={{
+              background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+              padding: "10px 18px",
+              borderRadius: "14px",
+              border: "1px solid rgba(56, 189, 248, 0.25)",
+              display: "flex",
+              alignItems: "center",
+              gap: "16px",
+              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)"
+            }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                  <span style={{ fontSize: "10px", color: "#94a3b8", fontWeight: "800", letterSpacing: "1px", textTransform: "uppercase" }}>
+                    Today's Shift Time
+                  </span>
+                  {scheduleInfo && (
+                    <span style={{
+                      fontSize: "10.5px",
+                      fontWeight: "700",
+                      padding: "2px 8px",
+                      borderRadius: "12px",
+                      background: "rgba(56, 189, 248, 0.15)",
+                      color: "#38bdf8",
+                      border: "1px solid rgba(56, 189, 248, 0.3)"
+                    }}>
+                      Shift: {scheduleInfo.timing} ({scheduleInfo.standardShiftHours}h)
+                    </span>
+                  )}
+                  {lateInstances && (
+                    <span style={{
+                      fontSize: "10.5px",
+                      fontWeight: "700",
+                      padding: "2px 8px",
+                      borderRadius: "12px",
+                      background: lateInstances.used > 0 ? "rgba(245, 158, 11, 0.15)" : "rgba(34, 197, 94, 0.15)",
+                      color: lateInstances.used > 0 ? "#f59e0b" : "#22c55e",
+                      border: lateInstances.used > 0 ? "1px solid rgba(245, 158, 11, 0.3)" : "1px solid rgba(34, 197, 94, 0.3)"
+                    }}>
+                      Late: {lateInstances.used}/{lateInstances.limit} Used
+                    </span>
+                  )}
+                </div>
+                <div style={{
+                  fontSize: "26px",
+                  fontWeight: "900",
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  color: "#38bdf8",
+                  letterSpacing: "1px",
+                  lineHeight: "1"
+                }}>
+                  {elapsedTime}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
@@ -483,7 +619,7 @@ export default function ProjectManagerDashboard() {
         </div>
       </div>
 
-      {/* 📊 PROJECT MANAGER KPI CARDS */}
+      {/* PROJECT MANAGER KPI CARDS */}
       <div
         style={{
           display: "grid",
@@ -534,7 +670,7 @@ export default function ProjectManagerDashboard() {
         />
       </div>
 
-      {/* 📦 ACTIVE PROJECTS & RECENT SPRINT TASKS GRID */}
+      {/* ACTIVE PROJECTS & RECENT SPRINT TASKS GRID */}
       <div
         style={{
           display: "grid",
@@ -711,7 +847,7 @@ export default function ProjectManagerDashboard() {
         </div>
       </div>
 
-      {/* 👥 MANAGED TEAM ROSTER */}
+      {/* MANAGED TEAM ROSTER */}
       <div
         style={{
           background: "var(--ui-surface, #ffffff)",
@@ -794,7 +930,7 @@ export default function ProjectManagerDashboard() {
 
       {/* POPUP MODALS */}
       <AlertModal
-        isOpen={alertInfo.show}
+        show={alertInfo.show}
         title={alertInfo.title}
         message={alertInfo.message}
         type={alertInfo.type}
@@ -802,14 +938,14 @@ export default function ProjectManagerDashboard() {
       />
 
       <ConfirmModal
-        isOpen={showConfirmClockOut}
+        show={showConfirmClockOut}
         title="Confirm Clock Out"
-        message="Are you sure you want to end your shift for today? Your total hours and timesheet records will be saved."
-        confirmText="Clock Out"
+        message={clockOutConfirmMsg || "Are you sure you want to end your shift for today? Your total hours and timesheet records will be saved."}
+        confirmText="Yes, Clock Out"
+        confirmColor="#dc2626"
         cancelText="Cancel"
-        type="danger"
         onConfirm={confirmClockOut}
-        onCancel={() => setShowConfirmClockOut(false)}
+        onClose={() => setShowConfirmClockOut(false)}
       />
     </div>
   );

@@ -4,6 +4,9 @@ import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useProject } from "../contexts/ProjectContext";
 import { ChevronLeftIcon, ChevronRightIcon, SheetIcon, CheckIcon, SaveIcon, CloseIcon } from "../components/common/Icons";
+import Pagination from "../components/common/Pagination";
+import ConfirmModal from "../components/common/ConfirmModal";
+import { useTableSort, SortIndicator } from "../utils/tableSort";
 import "../style/main.css";
 import "../style/table.css";
 
@@ -12,6 +15,29 @@ export default function Timesheet() {
   const { showToast } = useToast();
   const { selectedProject } = useProject();
 
+  const [confirmConfig, setConfirmConfig] = useState({
+    show: false,
+    title: "Confirmation",
+    message: "",
+    onConfirm: () => {},
+    confirmText: "Confirm",
+    confirmColor: "var(--danger-color)"
+  });
+
+  const askConfirm = (title, message, onConfirm, confirmText = "Delete", confirmColor = "var(--danger-color)") => {
+    setConfirmConfig({
+      show: true,
+      title,
+      message,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, show: false }));
+        await onConfirm();
+      },
+      confirmText,
+      confirmColor
+    });
+  };
+
   const isSuperAdmin = user?.email === "gadanipranav@gmail.com" || user?.role?.name === "Super Admin";
   const isManager = user?.position?.includes("Manager") || user?.role?.name?.includes("Manager");
   const canReview = isSuperAdmin || isManager;
@@ -19,6 +45,7 @@ export default function Timesheet() {
   const [activeTab, setActiveTab] = useState("my-excel"); // "my-excel" | "all-logs" | "summary"
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
   const [dailyEntries, setDailyEntries] = useState([]);
+  const [rowErrors, setRowErrors] = useState({});
   const [allTimesheets, setAllTimesheets] = useState([]);
   const [summary, setSummary] = useState({ projectSummary: [], todayHours: 0, weekHours: 0 });
   const [projects, setProjects] = useState([]);
@@ -32,6 +59,9 @@ export default function Timesheet() {
   const [filterDate, setFilterDate] = useState("");
   const [filterUser, setFilterUser] = useState("");
   const [rejectModal, setRejectModal] = useState({ show: false, id: null, reason: "" });
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewPageSize, setReviewPageSize] = useState(10);
+  const { sortedData: sortedTimesheets, sortConfig: tsSortConfig, requestSort: requestTsSort } = useTableSort(allTimesheets, "date", "desc");
 
   // Load initial projects & tasks
   useEffect(() => {
@@ -47,6 +77,10 @@ export default function Timesheet() {
       fetchSummary();
     }
   }, [activeTab, selectedDate, filterProject, filterStatus, filterDate, filterUser]);
+
+  useEffect(() => {
+    setReviewPage(1);
+  }, [filterProject, filterStatus, filterDate, filterUser]);
 
   const fetchMeta = async () => {
     try {
@@ -214,19 +248,30 @@ export default function Timesheet() {
   // Save single Excel row
   const handleSaveRow = async (index) => {
     const row = dailyEntries[index];
+    const errors = {};
+    if (!row.hours || parseFloat(row.hours) <= 0) {
+      errors.hours = "Plese enter hours";
+    }
     if (!row.project_id) {
-      showToast("Please select a project for this line", "error");
+      errors.project_id = "Plese enter project";
+    }
+    if (!row.description || !row.description.trim()) {
+      errors.description = "Plese enter description";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setRowErrors(prev => ({ ...prev, [index]: errors }));
       return;
     }
+
+    // Clear error for this row
+    setRowErrors(prev => {
+      const copy = { ...prev };
+      delete copy[index];
+      return copy;
+    });
+
     const numH = parseFloat(row.hours);
-    if (isNaN(numH) || numH <= 0) {
-      showToast("Please enter valid hours (e.g. 8.00)", "error");
-      return;
-    }
-    if (!row.description.trim()) {
-      showToast("Please enter a brief description for this line", "error");
-      return;
-    }
 
     try {
       const payload = {
@@ -254,26 +299,43 @@ export default function Timesheet() {
       fetchDailyTimesheets(selectedDate);
       fetchSummary();
     } catch (e) {
-      showToast(e.response?.data?.error || "Save failed", "error");
+      const errMsg = e.response?.data?.error || e.message || "Save failed";
+      let matchedField = false;
+      if (errMsg.toLowerCase().includes("project")) {
+        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], project_id: "Plese enter project" } }));
+        matchedField = true;
+      }
+      if (errMsg.toLowerCase().includes("hours")) {
+        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], hours: "Plese enter hours" } }));
+        matchedField = true;
+      }
+      if (errMsg.toLowerCase().includes("description")) {
+        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], description: "Plese enter description" } }));
+        matchedField = true;
+      }
+      if (!matchedField) {
+        showToast(errMsg, "error");
+      }
     }
   };
 
   // Delete row
-  const handleDeleteRow = async (index) => {
+  const handleDeleteRow = (index) => {
     const row = dailyEntries[index];
     if (!row.isSaved || row.id.startsWith("temp_")) {
       setDailyEntries(prev => prev.filter((_, i) => i !== index));
       return;
     }
-    if (!window.confirm("Delete this timesheet entry?")) return;
-    try {
-      await API.delete(`/timesheets/${row.id}`);
-      showToast("Line deleted successfully!");
-      fetchDailyTimesheets(selectedDate);
-      fetchSummary();
-    } catch (e) {
-      showToast(e.response?.data?.error || "Delete failed", "error");
-    }
+    askConfirm("Delete Timesheet Entry", "Delete this timesheet entry?", async () => {
+      try {
+        await API.delete(`/timesheets/${row.id}`);
+        showToast("Line deleted successfully!");
+        fetchDailyTimesheets(selectedDate);
+        fetchSummary();
+      } catch (e) {
+        showToast(e.response?.data?.error || "Delete failed", "error");
+      }
+    });
   };
 
   // Submit whole day's report for approval
@@ -376,7 +438,12 @@ export default function Timesheet() {
             </span>
           </h1>
           <p style={{ color: "#64748b", fontSize: "13px", margin: "4px 0 0 0" }}>
-            {user?.name} ({user?.position || "Developer"}) — Log your daily task & subtask hours below.
+            {user?.name} ({
+              user?.role?.name ||
+              (user?.position && user?.position !== "role_staff" && user?.position !== "role_developer"
+                ? user.position.replace(/^role_/i, "").replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())
+                : (user?.role === "role_owner" || user?.role?.id === "role_owner" ? "Project Manager" : "Staff"))
+            }) — Log your daily task & subtask hours below.
           </p>
         </div>
 
@@ -596,17 +663,33 @@ export default function Timesheet() {
 
             {/* Excel Table Grid */}
             <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", width: "100%" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "1020px" }}>
+              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: "1080px" }}>
                 <thead>
-                  <tr style={{ background: "var(--ui-bg, #f8fafc)", textAlign: "left", borderBottom: "1.5px solid var(--ui-border, #cbd5e1)" }}>
-                    <th style={{ padding: "10px 10px", fontSize: "11.5px", fontWeight: "800", color: "var(--text-muted, #475569)", width: "85px", letterSpacing: "0.5px" }}>1. HOURS</th>
-                    <th style={{ padding: "10px 10px", fontSize: "11.5px", fontWeight: "800", color: "var(--text-muted, #475569)", width: "170px", letterSpacing: "0.5px" }}>2. PROJECT</th>
-                    <th style={{ padding: "10px 10px", fontSize: "11.5px", fontWeight: "800", color: "var(--text-muted, #475569)", width: "170px", letterSpacing: "0.5px" }}>3. TASK</th>
-                    <th style={{ padding: "10px 10px", fontSize: "11.5px", fontWeight: "800", color: "var(--text-muted, #475569)", width: "160px", letterSpacing: "0.5px" }}>4. SUB TASK</th>
-                    <th style={{ padding: "10px 10px", fontSize: "11.5px", fontWeight: "800", color: "var(--text-muted, #475569)", minWidth: "150px", letterSpacing: "0.5px" }}>5. DESCRIPTION</th>
-                    <th style={{ padding: "10px 10px", fontSize: "11.5px", fontWeight: "800", color: "var(--text-muted, #475569)", width: "135px", letterSpacing: "0.5px" }}>6. STATUS</th>
-                    <th style={{ padding: "10px 10px", fontSize: "11.5px", fontWeight: "800", color: "var(--text-muted, #475569)", width: "100px", textAlign: "center", letterSpacing: "0.5px" }}>APPROVAL</th>
-                    <th style={{ padding: "10px 10px", fontSize: "11.5px", fontWeight: "800", color: "var(--text-muted, #475569)", width: "95px", textAlign: "center", letterSpacing: "0.5px" }}>ACTION</th>
+                  <tr style={{ background: "var(--ui-bg, #f8fafc)", textAlign: "left", borderBottom: "1.5px solid var(--ui-border, #e2e8f0)" }}>
+                    <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", width: "100px", letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                      1. Hours <span style={{ color: "#ef4444" }}>*</span>
+                    </th>
+                    <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", width: "190px", letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                      2. Project <span style={{ color: "#ef4444" }}>*</span>
+                    </th>
+                    <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", width: "180px", letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                      3. Task
+                    </th>
+                    <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", width: "170px", letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                      4. Sub Task
+                    </th>
+                    <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", minWidth: "200px", letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                      5. Description <span style={{ color: "#ef4444" }}>*</span>
+                    </th>
+                    <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", width: "135px", letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                      6. Status
+                    </th>
+                    <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", width: "110px", textAlign: "center", letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                      Approval
+                    </th>
+                    <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", width: "110px", textAlign: "center", letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -619,11 +702,19 @@ export default function Timesheet() {
                     const selectedTaskObj = tasks.find(t => (t._id || t.id)?.toString() === row.task_id?.toString());
                     const rowSubtasks = selectedTaskObj?.subtasks || [];
                     const isLocked = row.status === "Approved";
+                    const err = rowErrors[idx] || {};
 
                     return (
-                      <tr key={row.id || idx} style={{ borderBottom: "1px solid var(--ui-border, #e2e8f0)", background: idx % 2 === 0 ? "var(--ui-surface, #ffffff)" : "var(--ui-bg, #fcfdfe)" }}>
+                      <tr 
+                        key={row.id || idx} 
+                        style={{ 
+                          borderBottom: "1px solid var(--ui-border, #e2e8f0)", 
+                          background: idx % 2 === 0 ? "var(--ui-surface, #ffffff)" : "#fafbfc",
+                          transition: "background 0.15s ease"
+                        }}
+                      >
                         {/* 1. Hours */}
-                        <td style={{ padding: "8px 10px" }}>
+                        <td style={{ padding: "10px", verticalAlign: "middle" }}>
                           <input
                             type="number"
                             step="0.25"
@@ -631,24 +722,57 @@ export default function Timesheet() {
                             max="24"
                             disabled={isLocked}
                             value={row.hours}
-                            onChange={(e) => handleRowFieldChange(idx, "hours", e.target.value)}
+                            onChange={(e) => {
+                              handleRowFieldChange(idx, "hours", e.target.value);
+                              if (err.hours) {
+                                setRowErrors(prev => ({ ...prev, [idx]: { ...prev[idx], hours: null } }));
+                              }
+                            }}
                             style={{
-                              width: "100%", padding: "7px 8px", border: "1px solid #cbd5e1", borderRadius: "6px",
-                              fontWeight: "800", fontSize: "13px", color: "#1e293b", background: isLocked ? "#f1f5f9" : "#fff"
+                              width: "100%", 
+                              height: "38px",
+                              padding: "0 10px", 
+                              border: err.hours ? "1.5px solid #ef4444" : "1px solid #d1d5db", 
+                              borderRadius: "7px",
+                              fontWeight: "700", 
+                              fontSize: "13px", 
+                              color: "#1e293b", 
+                              background: isLocked ? "#f1f5f9" : "#fff",
+                              boxSizing: "border-box",
+                              outline: "none"
                             }}
                             placeholder="0.00"
                           />
+                          {err.hours && (
+                            <div style={{ color: "#ef4444", fontSize: "11px", marginTop: "3px", fontWeight: "600" }}>
+                              {err.hours}
+                            </div>
+                          )}
                         </td>
 
                         {/* 2. Project */}
-                        <td style={{ padding: "8px 10px" }}>
+                        <td style={{ padding: "10px", verticalAlign: "middle" }}>
                           <select
                             disabled={isLocked}
                             value={row.project_id}
-                            onChange={(e) => handleRowFieldChange(idx, "project_id", e.target.value)}
+                            onChange={(e) => {
+                              handleRowFieldChange(idx, "project_id", e.target.value);
+                              if (err.project_id) {
+                                setRowErrors(prev => ({ ...prev, [idx]: { ...prev[idx], project_id: null } }));
+                              }
+                            }}
                             style={{
-                              width: "100%", padding: "7px 8px", border: "1px solid #cbd5e1", borderRadius: "6px",
-                              fontSize: "12px", fontWeight: "600", color: "#1e293b", background: isLocked ? "#f1f5f9" : "#fff"
+                              width: "100%", 
+                              height: "38px",
+                              padding: "0 10px", 
+                              border: err.project_id ? "1.5px solid #ef4444" : "1px solid #d1d5db", 
+                              borderRadius: "7px",
+                              fontSize: "12.5px", 
+                              fontWeight: "600", 
+                              color: "#1e293b", 
+                              background: isLocked ? "#f1f5f9" : "#fff",
+                              boxSizing: "border-box",
+                              outline: "none"
                             }}
                           >
                             <option value="">Select Project...</option>
@@ -656,17 +780,30 @@ export default function Timesheet() {
                               <option key={p._id || p.id} value={p._id || p.id}>{p.name}</option>
                             ))}
                           </select>
+                          {err.project_id && (
+                            <div style={{ color: "#ef4444", fontSize: "11px", marginTop: "3px", fontWeight: "600" }}>
+                              {err.project_id}
+                            </div>
+                          )}
                         </td>
 
                         {/* 3. Task */}
-                        <td style={{ padding: "8px 10px" }}>
+                        <td style={{ padding: "10px", verticalAlign: "middle" }}>
                           <select
                             disabled={isLocked}
                             value={row.task_id}
                             onChange={(e) => handleRowFieldChange(idx, "task_id", e.target.value)}
                             style={{
-                              width: "100%", padding: "7px 8px", border: "1px solid #cbd5e1", borderRadius: "6px",
-                              fontSize: "12px", color: "#1e293b", background: isLocked ? "#f1f5f9" : "#fff"
+                              width: "100%", 
+                              height: "38px",
+                              padding: "0 10px", 
+                              border: "1px solid #d1d5db", 
+                              borderRadius: "7px",
+                              fontSize: "12.5px", 
+                              color: "#1e293b", 
+                              background: isLocked ? "#f1f5f9" : "#fff",
+                              boxSizing: "border-box",
+                              outline: "none"
                             }}
                           >
                             <option value="">Select Task...</option>
@@ -677,14 +814,22 @@ export default function Timesheet() {
                         </td>
 
                         {/* 4. Sub Task */}
-                        <td style={{ padding: "8px 10px" }}>
+                        <td style={{ padding: "10px", verticalAlign: "middle" }}>
                           <select
                             disabled={isLocked}
                             value={row.subtask_id}
                             onChange={(e) => handleRowFieldChange(idx, "subtask_id", e.target.value)}
                             style={{
-                              width: "100%", padding: "7px 8px", border: "1px solid #cbd5e1", borderRadius: "6px",
-                              fontSize: "12px", color: "#334155", background: isLocked ? "#f1f5f9" : "#fff"
+                              width: "100%", 
+                              height: "38px",
+                              padding: "0 10px", 
+                              border: "1px solid #d1d5db", 
+                              borderRadius: "7px",
+                              fontSize: "12.5px", 
+                              color: "#334155", 
+                              background: isLocked ? "#f1f5f9" : "#fff",
+                              boxSizing: "border-box",
+                              outline: "none"
                             }}
                           >
                             <option value="">Select Sub Task...</option>
@@ -695,31 +840,56 @@ export default function Timesheet() {
                         </td>
 
                         {/* 5. Description */}
-                        <td style={{ padding: "8px 10px" }}>
+                        <td style={{ padding: "10px", verticalAlign: "middle" }}>
                           <input
                             type="text"
                             disabled={isLocked}
                             value={row.description}
-                            onChange={(e) => handleRowFieldChange(idx, "description", e.target.value)}
+                            onChange={(e) => {
+                              handleRowFieldChange(idx, "description", e.target.value);
+                              if (err.description) {
+                                setRowErrors(prev => ({ ...prev, [idx]: { ...prev[idx], description: null } }));
+                              }
+                            }}
                             placeholder="Detail work performed..."
                             style={{
-                              width: "100%", padding: "7px 10px", border: "1px solid #cbd5e1", borderRadius: "6px",
-                              fontSize: "12px", color: "#334155", background: isLocked ? "#f1f5f9" : "#fff"
+                              width: "100%", 
+                              height: "38px",
+                              padding: "0 12px", 
+                              border: err.description ? "1.5px solid #ef4444" : "1px solid #d1d5db", 
+                              borderRadius: "7px",
+                              fontSize: "12.5px", 
+                              color: "#334155", 
+                              background: isLocked ? "#f1f5f9" : "#fff",
+                              boxSizing: "border-box",
+                              outline: "none"
                             }}
                           />
+                          {err.description && (
+                            <div style={{ color: "#ef4444", fontSize: "11px", marginTop: "3px", fontWeight: "600" }}>
+                              {err.description}
+                            </div>
+                          )}
                         </td>
 
                         {/* 6. Status */}
-                        <td style={{ padding: "8px 10px" }}>
+                        <td style={{ padding: "10px", verticalAlign: "middle" }}>
                           <select
                             disabled={isLocked}
                             value={row.task_status}
                             onChange={(e) => handleRowFieldChange(idx, "task_status", e.target.value)}
                             style={{
-                              width: "100%", padding: "7px 6px", border: "1px solid #cbd5e1", borderRadius: "6px",
-                              fontSize: "12px", fontWeight: "700",
+                              width: "100%", 
+                              height: "38px",
+                              padding: "0 8px", 
+                              border: "1px solid #d1d5db", 
+                              borderRadius: "7px",
+                              fontSize: "12px", 
+                              fontWeight: "700",
                               background: row.task_status === "Complete" ? "#ecfdf5" : row.task_status === "In Process" ? "#eff6ff" : "#fffbeb",
-                              color: row.task_status === "Complete" ? "#15803d" : row.task_status === "In Process" ? "#1d4ed8" : "#b45309"
+                              color: row.task_status === "Complete" ? "#15803d" : row.task_status === "In Process" ? "#1d4ed8" : "#b45309",
+                              boxSizing: "border-box",
+                              outline: "none"
                             }}
                           >
                             <option value="Pending">Pending</option>
@@ -729,34 +899,60 @@ export default function Timesheet() {
                         </td>
 
                         {/* Approval */}
-                        <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                          {renderApprovalBadge(row.status)}
-                          {row.approved_by && (
-                            <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px" }}>by {row.approved_by}</div>
-                          )}
+                        <td style={{ padding: "10px", textAlign: "center", verticalAlign: "middle" }}>
+                          <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                            {renderApprovalBadge(row.status)}
+                            {row.approved_by && (
+                              <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px" }}>by {row.approved_by}</div>
+                            )}
+                          </div>
                         </td>
 
                         {/* Actions */}
-                        <td style={{ padding: "8px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
+                        <td style={{ padding: "10px", textAlign: "center", verticalAlign: "middle", whiteSpace: "nowrap" }}>
                           {!isLocked && (
-                            <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                            <div style={{ display: "inline-flex", gap: "6px", alignItems: "center", justifyContent: "center" }}>
                               <button
                                 type="button"
                                 onClick={() => handleSaveRow(idx)}
                                 style={{
-                                  background: "#4f46e5", color: "#fff", border: "none", borderRadius: "6px",
-                                  padding: "6px 10px", cursor: "pointer", fontWeight: "700", fontSize: "11px",
-                                  display: "inline-flex", alignItems: "center", gap: "4px"
+                                  background: "#4f46e5", 
+                                  color: "#fff", 
+                                  border: "none", 
+                                  borderRadius: "7px",
+                                  height: "34px",
+                                  padding: "0 12px", 
+                                  cursor: "pointer", 
+                                  fontWeight: "700", 
+                                  fontSize: "12px",
+                                  display: "inline-flex", 
+                                  alignItems: "center", 
+                                  gap: "5px",
+                                  boxShadow: "0 1px 2px rgba(79, 70, 229, 0.2)"
                                 }}
                                 title="Save line"
                               >
-                                <SaveIcon size={12} color="#fff" /> Save
+                                <SaveIcon size={13} color="#fff" /> Save
                               </button>
                               <button
                                 type="button"
-                                className="action-btn delete"
                                 onClick={() => handleDeleteRow(idx)}
                                 title="Delete line"
+                                style={{
+                                  background: "#fff",
+                                  border: "1px solid #fee2e2",
+                                  color: "#ef4444",
+                                  borderRadius: "7px",
+                                  height: "34px",
+                                  width: "34px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  cursor: "pointer",
+                                  padding: 0
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = "#fef2f2"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <path d="M3 6h18" />
@@ -774,21 +970,40 @@ export default function Timesheet() {
 
                 {/* Footer Totals */}
                 <tfoot>
-                  <tr style={{ background: "var(--ui-bg, #f8fafc)", borderTop: "2px solid var(--ui-border, #cbd5e1)" }}>
-                    <td style={{ padding: "12px 14px", fontWeight: "800", fontSize: "14px", color: "var(--text-main, #1e293b)" }}>
-                      {dayTotalHours.toFixed(2)} hrs
+                  <tr style={{ background: "var(--ui-bg, #f8fafc)", borderTop: "2px solid var(--ui-border, #e2e8f0)" }}>
+                    <td style={{ padding: "14px 12px", verticalAlign: "middle" }}>
+                      <div style={{ display: "inline-flex", flexDirection: "column" }}>
+                        <span style={{ fontSize: "14px", fontWeight: "800", color: "#1e293b", lineHeight: 1.2 }}>
+                          {dayTotalHours.toFixed(2)} hrs
+                        </span>
+                        <span style={{ fontSize: "11px", fontWeight: "600", color: "#64748b" }}>
+                          Total Logged
+                        </span>
+                      </div>
                     </td>
-                    <td colSpan="5" style={{ padding: "12px 14px" }}></td>
-                    <td colSpan="2" style={{ padding: "12px 14px", textAlign: "right" }}>
+                    <td colSpan="5" style={{ padding: "14px 12px" }}></td>
+                    <td colSpan="2" style={{ padding: "14px 12px", textAlign: "right", verticalAlign: "middle" }}>
                       <button
                         type="button"
                         onClick={handleAddExcelRow}
                         style={{
-                          background: "var(--primary-light, #eef2ff)", color: "var(--primary-color, #4f46e5)", border: "1.5px dashed var(--primary-color, #c7d2fe)",
-                          borderRadius: "6px", padding: "6px 14px", fontWeight: "700", fontSize: "12px", cursor: "pointer"
+                          background: "#fff", 
+                          color: "#4f46e5", 
+                          border: "1.5px dashed #818cf8",
+                          borderRadius: "7px", 
+                          padding: "8px 16px", 
+                          fontWeight: "700", 
+                          fontSize: "12.5px", 
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.02)"
                         }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "#eef2ff"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
                       >
-                        + Add Another Task Line
+                        <span style={{ fontSize: "15px", lineHeight: "1" }}>+</span> Add Another Task Line
                       </button>
                     </td>
                   </tr>
@@ -851,26 +1066,44 @@ export default function Timesheet() {
               <table className="custom-table" style={{ width: "100%", minWidth: "900px", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>
-                    <th style={{ padding: "12px 16px", fontSize: "12px", color: "#475569" }}>EMPLOYEE</th>
-                    <th style={{ padding: "12px 16px", fontSize: "12px", color: "#475569" }}>DATE</th>
-                    <th style={{ padding: "12px 16px", fontSize: "12px", color: "#475569" }}>HOURS</th>
-                    <th style={{ padding: "12px 16px", fontSize: "12px", color: "#475569" }}>PROJECT</th>
-                    <th style={{ padding: "12px 16px", fontSize: "12px", color: "#475569" }}>TASK & SUBTASK</th>
-                    <th style={{ padding: "12px 16px", fontSize: "12px", color: "#475569" }}>DESCRIPTION</th>
-                    <th style={{ padding: "12px 16px", fontSize: "12px", color: "#475569" }}>STATUS</th>
-                    <th style={{ padding: "12px 16px", fontSize: "12px", color: "#475569" }}>APPROVAL</th>
+                    <th onClick={() => requestTsSort("user_name")} style={{ padding: "12px 16px", fontSize: "12px", color: "#475569", cursor: "pointer", userSelect: "none" }}>
+                      EMPLOYEE <SortIndicator sortKey="user_name" currentKey={tsSortConfig.key} direction={tsSortConfig.direction} />
+                    </th>
+                    <th onClick={() => requestTsSort("date")} style={{ padding: "12px 16px", fontSize: "12px", color: "#475569", cursor: "pointer", userSelect: "none" }}>
+                      DATE <SortIndicator sortKey="date" currentKey={tsSortConfig.key} direction={tsSortConfig.direction} />
+                    </th>
+                    <th onClick={() => requestTsSort("hours")} style={{ padding: "12px 16px", fontSize: "12px", color: "#475569", cursor: "pointer", userSelect: "none" }}>
+                      HOURS <SortIndicator sortKey="hours" currentKey={tsSortConfig.key} direction={tsSortConfig.direction} />
+                    </th>
+                    <th onClick={() => requestTsSort("project_name")} style={{ padding: "12px 16px", fontSize: "12px", color: "#475569", cursor: "pointer", userSelect: "none" }}>
+                      PROJECT <SortIndicator sortKey="project_name" currentKey={tsSortConfig.key} direction={tsSortConfig.direction} />
+                    </th>
+                    <th onClick={() => requestTsSort("task_title")} style={{ padding: "12px 16px", fontSize: "12px", color: "#475569", cursor: "pointer", userSelect: "none" }}>
+                      TASK & SUBTASK <SortIndicator sortKey="task_title" currentKey={tsSortConfig.key} direction={tsSortConfig.direction} />
+                    </th>
+                    <th onClick={() => requestTsSort("description")} style={{ padding: "12px 16px", fontSize: "12px", color: "#475569", cursor: "pointer", userSelect: "none" }}>
+                      DESCRIPTION <SortIndicator sortKey="description" currentKey={tsSortConfig.key} direction={tsSortConfig.direction} />
+                    </th>
+                    <th onClick={() => requestTsSort("task_status")} style={{ padding: "12px 16px", fontSize: "12px", color: "#475569", cursor: "pointer", userSelect: "none" }}>
+                      STATUS <SortIndicator sortKey="task_status" currentKey={tsSortConfig.key} direction={tsSortConfig.direction} />
+                    </th>
+                    <th onClick={() => requestTsSort("status")} style={{ padding: "12px 16px", fontSize: "12px", color: "#475569", cursor: "pointer", userSelect: "none" }}>
+                      APPROVAL <SortIndicator sortKey="status" currentKey={tsSortConfig.key} direction={tsSortConfig.direction} />
+                    </th>
                     <th style={{ padding: "12px 16px", fontSize: "12px", color: "#475569", textAlign: "right" }}>ADMIN ACTION</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {allTimesheets.length === 0 ? (
+                  {sortedTimesheets.length === 0 ? (
                     <tr>
                       <td colSpan="9" style={{ textAlign: "center", padding: "40px", color: "#94a3b8" }}>
                         No staff timesheets found matching filters.
                       </td>
                     </tr>
                   ) : (
-                    allTimesheets.map(ts => (
+                    sortedTimesheets
+                      .slice((reviewPage - 1) * reviewPageSize, reviewPage * reviewPageSize)
+                      .map(ts => (
                       <tr key={ts.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                         <td style={{ padding: "12px 16px" }}>
                           <div style={{ fontWeight: "700", color: "#1e293b", fontSize: "14px" }}>{ts.user_name}</div>
@@ -937,6 +1170,13 @@ export default function Timesheet() {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              currentPage={reviewPage}
+              totalRecords={allTimesheets.length}
+              pageSize={reviewPageSize}
+              onPageChange={setReviewPage}
+              onPageSizeChange={(newSize) => { setReviewPageSize(newSize); setReviewPage(1); }}
+            />
           </div>
         </div>
       )}
@@ -1016,6 +1256,16 @@ export default function Timesheet() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        show={confirmConfig.show}
+        onClose={() => setConfirmConfig((prev) => ({ ...prev, show: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmText={confirmConfig.confirmText}
+        confirmColor={confirmConfig.confirmColor}
+      />
     </div>
   );
 }

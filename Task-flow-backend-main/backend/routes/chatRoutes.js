@@ -113,7 +113,7 @@ router.post("/conversations/direct", authMiddleware, async (req, res) => {
 // POST /api/chat/conversations/group — create group conversation
 router.post("/conversations/group", authMiddleware, async (req, res) => {
   try {
-    const { name, participantIds } = req.body;
+    const { name, participantIds, clientParticipants } = req.body;
     const userId = req.user._id ? req.user._id.toString() : req.user.id.toString();
 
     const allParticipants = [
@@ -121,11 +121,21 @@ router.post("/conversations/group", authMiddleware, async (req, res) => {
       ...(participantIds || []).map((id) => id.toString()).filter((id) => id !== userId),
     ];
 
+    // Format client participants with IDs if missing
+    const clients = Array.isArray(clientParticipants)
+      ? clientParticipants.map((cp) => ({
+          _id: cp._id || cp.id || `cli_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          id: cp._id || cp.id || `cli_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          name: cp.name || "Client",
+          email: cp.email || ""
+        }))
+      : [];
+
     const id = `conv_grp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     await pool.query(
-      `INSERT INTO chat_conversations (id, type, name, participants, created_by, company_id)
-       VALUES (?, 'group', ?, ?, ?, ?)`,
-      [id, name || "Group Chat", JSON.stringify(allParticipants), userId, req.user.companyId?._id || req.user.companyId || "default_company"]
+      `INSERT INTO chat_conversations (id, type, name, participants, client_participants, created_by, company_id)
+       VALUES (?, 'group', ?, ?, ?, ?, ?)`,
+      [id, name || "Group Chat", JSON.stringify(allParticipants), JSON.stringify(clients), userId, req.user.companyId?._id || req.user.companyId || "default_company"]
     );
 
     const [rows] = await pool.query("SELECT * FROM chat_conversations WHERE id = ?", [id]);
@@ -137,11 +147,117 @@ router.post("/conversations/group", authMiddleware, async (req, res) => {
   }
 });
 
+// PUT /api/chat/conversations/:id/add-client — Add client to group conversation
+router.put("/conversations/:id/add-client", authMiddleware, async (req, res) => {
+  try {
+    const convId = req.params.id;
+    const { name, email, clientId } = req.body;
+
+    if (!name && !email && !clientId) {
+      return res.status(400).json({ message: "Client name and email required" });
+    }
+
+    const [rows] = await pool.query("SELECT * FROM chat_conversations WHERE id = ?", [convId]);
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    const conv = rows[0];
+    const clients = safeJson(conv.client_participants, []);
+
+    // Check if client with email already exists
+    const exists = clients.some(
+      (c) => c.email && email && c.email.toLowerCase() === email.toLowerCase()
+    );
+    if (exists) {
+      return res.status(400).json({ message: "Client already added to conversation" });
+    }
+
+    const newClient = {
+      _id: clientId || `cli_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      id: clientId || `cli_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      name: name ? name.trim() : "Client",
+      email: email ? email.trim() : ""
+    };
+
+    clients.push(newClient);
+
+    await pool.query(
+      "UPDATE chat_conversations SET client_participants = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [JSON.stringify(clients), convId]
+    );
+
+    const [updatedRows] = await pool.query("SELECT * FROM chat_conversations WHERE id = ?", [convId]);
+    const [populated] = await populateConversations(updatedRows);
+    res.json(populated);
+  } catch (err) {
+    console.error("PUT /conversations/:id/add-client error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// PUT /api/chat/conversations/:id/remove-client — Remove client from conversation
+router.put("/conversations/:id/remove-client", authMiddleware, async (req, res) => {
+  try {
+    const convId = req.params.id;
+    const { clientId } = req.body;
+
+    if (!clientId) {
+      return res.status(400).json({ message: "clientId required" });
+    }
+
+    const [rows] = await pool.query("SELECT * FROM chat_conversations WHERE id = ?", [convId]);
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    const conv = rows[0];
+    const clients = safeJson(conv.client_participants, []);
+
+    // Filter out client by ID or email
+    const updatedClients = clients.filter(
+      (c) => c._id !== clientId && c.id !== clientId && c.email !== clientId
+    );
+
+    await pool.query(
+      "UPDATE chat_conversations SET client_participants = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [JSON.stringify(updatedClients), convId]
+    );
+
+    const [updatedRows] = await pool.query("SELECT * FROM chat_conversations WHERE id = ?", [convId]);
+    const [populated] = await populateConversations(updatedRows);
+    res.json(populated);
+  } catch (err) {
+    console.error("PUT /conversations/:id/remove-client error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // GET /api/chat/conversations/:id/messages
 router.get("/conversations/:id/messages", authMiddleware, async (req, res) => {
   try {
     const convId = req.params.id;
     const userId = req.user._id ? req.user._id.toString() : req.user.id.toString();
+
+    // Mark all messages in this conversation as read by this user
+    try {
+      const [unreadMsgs] = await pool.query(
+        `SELECT id, read_by FROM chat_messages WHERE conversation_id = ?`,
+        [convId]
+      );
+      for (const m of unreadMsgs) {
+        const readList = safeJson(m.read_by, []);
+        if (!readList.includes(userId)) {
+          readList.push(userId);
+          await pool.query(
+            `UPDATE chat_messages SET read_by = ? WHERE id = ?`,
+            [JSON.stringify(readList), m.id]
+          );
+        }
+      }
+    } catch (markErr) {
+      console.error("Error marking messages as read:", markErr);
+    }
 
     const [messages] = await pool.query(
       `SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY created_at ASC`,
@@ -170,6 +286,34 @@ router.get("/conversations/:id/messages", authMiddleware, async (req, res) => {
     res.json(formatted);
   } catch (err) {
     console.error("GET /messages error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// PUT /api/chat/conversations/:id/read - explicitly mark conversation as read
+router.put("/conversations/:id/read", authMiddleware, async (req, res) => {
+  try {
+    const convId = req.params.id;
+    const userId = req.user._id ? req.user._id.toString() : req.user.id.toString();
+
+    const [unreadMsgs] = await pool.query(
+      `SELECT id, read_by FROM chat_messages WHERE conversation_id = ?`,
+      [convId]
+    );
+    for (const m of unreadMsgs) {
+      const readList = safeJson(m.read_by, []);
+      if (!readList.includes(userId)) {
+        readList.push(userId);
+        await pool.query(
+          `UPDATE chat_messages SET read_by = ? WHERE id = ?`,
+          [JSON.stringify(readList), m.id]
+        );
+      }
+    }
+
+    res.json({ success: true, conversationId: convId });
+  } catch (err) {
+    console.error("PUT /conversations/:id/read error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -221,6 +365,26 @@ router.post("/conversations/:id/messages", authMiddleware, async (req, res) => {
     const io = req.app.get("io");
     if (io) {
       io.to(`conv_${convId}`).emit("new_message", msgObj);
+
+      // Notify conversation participants personally
+      const [convRows] = await pool.query("SELECT participants FROM chat_conversations WHERE id = ?", [convId]);
+      if (convRows.length > 0) {
+        let pList = [];
+        try {
+          pList = typeof convRows[0].participants === "string" ? JSON.parse(convRows[0].participants) : (convRows[0].participants || []);
+        } catch(e) {}
+        pList.forEach(pId => {
+          if (pId && pId.toString() !== userId.toString()) {
+            io.to(`user_${pId}`).emit("chat_notification", {
+              conversationId: convId,
+              message: msgObj,
+              senderName: userName || "Someone",
+              text: text || "Sent an attachment"
+            });
+          }
+        });
+      }
+
       io.emit(`conv_updated_${convId}`, { conversationId: convId, lastMessage: JSON.parse(lastMsg) });
     }
 

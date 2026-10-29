@@ -1,6 +1,7 @@
 import axios from "axios";
 
 const getBaseURL = () => {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
   const hostname = window.location.hostname;
   if (hostname === "localhost" || hostname === "127.0.0.1") return "http://localhost:5000/api";
   
@@ -9,8 +10,8 @@ const getBaseURL = () => {
     const tunnelOrigin = window.location.origin.replace("-5173", "-5000");
     return `${tunnelOrigin}/api`;
   }
-  // Change this to your deployed Render URL
-  return `https://task-flow-backend-jiwe.onrender.com/api`;
+  // Production: same origin /api for Plesk/VPS
+  return "/api";
 };
 
 const API = axios.create({
@@ -18,7 +19,7 @@ const API = axios.create({
   withCredentials: true,
 });
 
-// ⚡ Global Interceptor: Automatically attach selectedCompany to all outgoing requests
+// Global Interceptor: Automatically attach selectedCompany to all outgoing requests
 API.interceptors.request.use((config) => {
   try {
     const token = localStorage.getItem("token");
@@ -42,11 +43,18 @@ API.interceptors.request.use((config) => {
   return config;
 });
 
-// 🔔 Global Response Interceptor: Handle plan limit errors
+// Global Response Interceptor: Handle plan limit errors
 API.interceptors.response.use(
   (response) => response,
   (error) => {
     const data = error?.response?.data;
+    if (error?.response?.status === 403 && data?.inactive) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+    }
     if (error?.response?.status === 403 && data?.limitReached) {
       error.planLimitError = true;
       error.planLimitMessage = data.message || "Plan limit reached. Please upgrade your subscription.";

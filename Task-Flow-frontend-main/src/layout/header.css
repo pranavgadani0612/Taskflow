@@ -67,15 +67,37 @@
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  min-width: 240px;
+  min-width: 250px;
+  max-width: 320px;
+  max-height: 380px;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: #ffffff;
   border: 1px solid var(--ui-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   z-index: 10001; /* Above sticky page header */
-  overflow: hidden;
   padding: 6px;
   animation: dropdownSlide 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.project-dropdown__menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.project-dropdown__menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.project-dropdown__menu::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.project-dropdown__menu::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 @keyframes dropdownSlide {

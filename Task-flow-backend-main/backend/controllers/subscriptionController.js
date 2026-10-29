@@ -113,6 +113,13 @@ exports.getUsageStats = async (req, res) => {
 // POST create a new plan
 exports.createPlan = async (req, res) => {
   try {
+    const { name, price } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Plese enter plan name" });
+    }
+    if (price === undefined || price === null || price === "" || isNaN(Number(price))) {
+      return res.status(400).json({ error: "Plese enter price" });
+    }
     const plan = new Subscription(req.body);
     await plan.save();
     res.status(201).json(plan);
@@ -124,6 +131,13 @@ exports.createPlan = async (req, res) => {
 // PUT update an existing plan
 exports.updatePlan = async (req, res) => {
   try {
+    const { name, price } = req.body;
+    if (name !== undefined && !name.trim()) {
+      return res.status(400).json({ error: "Plese enter plan name" });
+    }
+    if (price !== undefined && (price === "" || isNaN(Number(price)))) {
+      return res.status(400).json({ error: "Plese enter price" });
+    }
     const plan = await Subscription.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!plan) return res.status(404).json({ error: "Plan not found" });
     res.json(plan);

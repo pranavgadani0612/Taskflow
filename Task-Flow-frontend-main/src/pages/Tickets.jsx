@@ -4,6 +4,9 @@ import { useToast } from "../contexts/ToastContext";
 import { useSocket } from "../contexts/SocketContext";
 import API from "../api/api";
 import { TicketIcon, PlusIcon, ClockIcon, GearIcon, CheckCircleIcon, CloseIcon } from "../components/common/Icons";
+import Pagination from "../components/common/Pagination";
+import ConfirmModal from "../components/common/ConfirmModal";
+import { useTableSort, SortIndicator } from "../utils/tableSort";
 import "../style/main.css";
 import "../style/table.css";
 
@@ -18,6 +21,14 @@ export default function Tickets() {
     user?.role === "Super Admin" ||
     user?.role?.name === "Company Owner" ||
     user?.role?.name?.toLowerCase().includes("admin");
+
+  const categoryItemMap = {
+    Hardware: ["Mouse", "Keyboard", "Monitor / Screen", "Headset / Headphones", "Charger / Cable", "Laptop / PC", "RAM / Storage", "Other Hardware"],
+    Software: ["Operating System", "IDE / Code Editor", "Database / Dev Tool", "Software License", "Email / Communication Tool", "Antivirus / Security", "Other Software"],
+    "Network/Internet": ["Wi-Fi / Ethernet", "VPN Connection", "Router / Gateway", "Firewall / Port Access", "Domain / DNS Issue", "Other Network"],
+    Workstation: ["Office Desk", "Ergonomic Chair", "Power Socket / Extension", "Lighting / AC", "Drawer / Locker", "Other Furniture"],
+    Other: ["ID Card / Access Badge", "General Query", "Other Facility", "Miscellaneous"]
+  };
 
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,12 +48,42 @@ export default function Tickets() {
     description: "",
     priority: "Medium",
   });
+  const [fieldErrors, setFieldErrors] = useState({});
 
   // Admin Resolve Modal
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [adminRemarks, setAdminRemarks] = useState("");
   const [targetStatus, setTargetStatus] = useState("In Progress");
   const [resolving, setResolving] = useState(false);
+
+  const [confirmConfig, setConfirmConfig] = useState({
+    show: false,
+    title: "Delete Ticket",
+    message: "",
+    onConfirm: () => {},
+    confirmText: "Delete",
+    confirmColor: "var(--danger-color)"
+  });
+
+  const handleDeleteTicket = (ticketId) => {
+    setConfirmConfig({
+      show: true,
+      title: "Delete Ticket",
+      message: "Are you sure you want to delete this ticket? This action cannot be undone.",
+      confirmText: "Delete",
+      confirmColor: "var(--danger-color)",
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, show: false }));
+        try {
+          await API.delete(`/tickets/${ticketId}`);
+          showToast("Ticket deleted successfully!", "success");
+          loadTicketData();
+        } catch (err) {
+          showToast(err.response?.data?.error || "Failed to delete ticket", "error");
+        }
+      }
+    });
+  };
 
   // Load Tickets & Stats
   const loadTicketData = useCallback(async () => {
@@ -81,8 +122,13 @@ export default function Tickets() {
   // Create Ticket
   const handleCreateTicket = async (e) => {
     e.preventDefault();
-    if (!formData.title.trim() || !formData.description.trim()) {
-      showToast("Please provide both title and description.", "warning");
+    setFieldErrors({});
+    if (!formData.title || !formData.title.trim()) {
+      showToast("Issue title is required", "error");
+      return;
+    }
+    if (!formData.description || !formData.description.trim()) {
+      showToast("Description is required", "error");
       return;
     }
     try {
@@ -90,6 +136,7 @@ export default function Tickets() {
       await API.post("/tickets", formData);
       showToast("Ticket submitted successfully! Admin will review shortly.", "success");
       setShowCreateModal(false);
+      setFieldErrors({});
       setFormData({
         category: "Hardware",
         item_type: "Mouse",
@@ -99,7 +146,17 @@ export default function Tickets() {
       });
       loadTicketData();
     } catch (err) {
-      showToast(err.response?.data?.error || "Failed to submit ticket", "error");
+      const serverMsg = err.response?.data?.error || err.response?.data?.message;
+      const field = err.response?.data?.field;
+      if (field && serverMsg) {
+        setFieldErrors({ [field]: serverMsg });
+      } else if (serverMsg && serverMsg.toLowerCase().includes("title")) {
+        setFieldErrors({ title: serverMsg });
+      } else if (serverMsg && serverMsg.toLowerCase().includes("description")) {
+        setFieldErrors({ description: serverMsg });
+      } else {
+        showToast(serverMsg || "Failed to submit ticket", "error");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -131,21 +188,33 @@ export default function Tickets() {
     }
   };
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, searchQuery]);
+
   // Filtered tickets
   const filteredTickets = tickets.filter((t) => {
     const matchStatus = statusFilter === "All" || t.status === statusFilter;
+    const trimmed = searchQuery.trim().toLowerCase();
     const matchSearch =
-      !searchQuery.trim() ||
-      (t.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.ticket_number || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.user_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.item_type || "").toLowerCase().includes(searchQuery.toLowerCase());
+      !trimmed ||
+      trimmed.length < 3 ||
+      (t.title || "").toLowerCase().includes(trimmed) ||
+      (t.ticket_number || "").toLowerCase().includes(trimmed) ||
+      (t.user_name || "").toLowerCase().includes(trimmed) ||
+      (t.item_type || "").toLowerCase().includes(trimmed);
     return matchStatus && matchSearch;
   });
 
+  const { sortedData: sortedTickets, sortConfig, requestSort } = useTableSort(filteredTickets, "created_at", "desc");
+  const paginatedTickets = sortedTickets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   return (
     <div style={{ padding: "10px 0 40px 0", maxWidth: "1400px", margin: "0 auto" }}>
-      {/* 🎫 HERO HEADER */}
+      {/* HERO HEADER */}
       <div
         style={{
           background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
@@ -208,7 +277,7 @@ export default function Tickets() {
         </button>
       </div>
 
-      {/* 📊 SUMMARY COUNTERS */}
+      {/* SUMMARY COUNTERS */}
       <div
         style={{
           display: "grid",
@@ -223,7 +292,7 @@ export default function Tickets() {
         <StatWidget label="Resolved" val={stats.resolved} color="#10b981" icon={<CheckCircleIcon size={20} color="#10b981" />} />
       </div>
 
-      {/* 🔍 FILTER & SEARCH BAR */}
+      {/* FILTER & SEARCH BAR */}
       <div
         style={{
           background: "var(--ui-surface, #ffffff)",
@@ -280,7 +349,7 @@ export default function Tickets() {
         />
       </div>
 
-      {/* 📋 TICKETS TABLE */}
+      {/* TICKETS TABLE */}
       <div
         style={{
           background: "var(--ui-surface, #ffffff)",
@@ -313,18 +382,30 @@ export default function Tickets() {
             <table style={{ width: "100%", minWidth: "850px", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
               <thead>
                 <tr style={{ background: "var(--ui-bg, #f8fafc)", borderBottom: "1px solid var(--ui-border, #e2e8f0)" }}>
-                  <th style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)" }}>TICKET #</th>
-                  <th style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)" }}>RAISED BY</th>
-                  <th style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)" }}>CATEGORY & ITEM</th>
-                  <th style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)" }}>ISSUE DETAILS</th>
-                  <th style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)" }}>PRIORITY</th>
-                  <th style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)" }}>STATUS</th>
+                  <th onClick={() => requestSort("ticket_number")} style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)", cursor: "pointer", userSelect: "none" }}>
+                    TICKET # <SortIndicator sortKey="ticket_number" currentKey={sortConfig.key} direction={sortConfig.direction} />
+                  </th>
+                  <th onClick={() => requestSort("user_name")} style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)", cursor: "pointer", userSelect: "none" }}>
+                    RAISED BY <SortIndicator sortKey="user_name" currentKey={sortConfig.key} direction={sortConfig.direction} />
+                  </th>
+                  <th onClick={() => requestSort("category")} style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)", cursor: "pointer", userSelect: "none" }}>
+                    CATEGORY & ITEM <SortIndicator sortKey="category" currentKey={sortConfig.key} direction={sortConfig.direction} />
+                  </th>
+                  <th onClick={() => requestSort("title")} style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)", cursor: "pointer", userSelect: "none" }}>
+                    ISSUE DETAILS <SortIndicator sortKey="title" currentKey={sortConfig.key} direction={sortConfig.direction} />
+                  </th>
+                  <th onClick={() => requestSort("priority")} style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)", cursor: "pointer", userSelect: "none" }}>
+                    PRIORITY <SortIndicator sortKey="priority" currentKey={sortConfig.key} direction={sortConfig.direction} />
+                  </th>
+                  <th onClick={() => requestSort("status")} style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)", cursor: "pointer", userSelect: "none" }}>
+                    STATUS <SortIndicator sortKey="status" currentKey={sortConfig.key} direction={sortConfig.direction} />
+                  </th>
                   <th style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)" }}>RESOLUTION / REMARKS</th>
                   {isSuperAdmin && <th style={{ padding: "16px 20px", fontWeight: "800", color: "var(--text-muted, #64748b)" }}>ACTIONS</th>}
                 </tr>
               </thead>
               <tbody>
-                {filteredTickets.map((t) => {
+                {paginatedTickets.map((t) => {
                   const statusColors = {
                     Open: { bg: "rgba(245, 158, 11, 0.12)", text: "#d97706" },
                     "In Progress": { bg: "rgba(59, 130, 246, 0.12)", text: "#2563eb" },
@@ -378,8 +459,8 @@ export default function Tickets() {
                         </div>
                       </td>
 
-                      <td style={{ padding: "16px 20px", maxWidth: "300px" }}>
-                        <div style={{ fontWeight: "800", color: "var(--text-main, #1e293b)", marginBottom: "4px" }}>
+                      <td style={{ padding: "16px 20px", maxWidth: "300px", wordBreak: "break-word", overflowWrap: "anywhere" }}>
+                        <div style={{ fontWeight: "800", color: "var(--text-main, #1e293b)", marginBottom: "4px", wordBreak: "break-word", overflowWrap: "anywhere" }}>
                           {t.title}
                         </div>
                         <div
@@ -388,6 +469,10 @@ export default function Tickets() {
                             fontSize: "12px",
                             lineHeight: "1.4",
                             whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            overflowWrap: "anywhere",
+                            maxHeight: "80px",
+                            overflowY: "auto"
                           }}
                         >
                           {t.description}
@@ -487,6 +572,28 @@ export default function Tickets() {
                                 Mark Resolved
                               </button>
                             )}
+
+                            {isSuperAdmin && (
+                              <button
+                                onClick={() => handleDeleteTicket(t.id)}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  color: "#ef4444",
+                                  padding: "6px 8px",
+                                  borderRadius: "8px",
+                                  cursor: "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                }}
+                                title="Delete Ticket"
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="3 6 5 6 21 6" />
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
@@ -495,11 +602,18 @@ export default function Tickets() {
                 })}
               </tbody>
             </table>
+            <Pagination
+              currentPage={currentPage}
+              totalRecords={filteredTickets.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => { setPageSize(newSize); setCurrentPage(1); }}
+            />
           </div>
         )}
       </div>
 
-      {/* 📝 RAISE TICKET MODAL */}
+      {/* RAISE TICKET MODAL */}
       {showCreateModal && (
         <div
           style={{
@@ -547,7 +661,10 @@ export default function Tickets() {
                   color: "var(--text-muted, #64748b)",
                 }}
               >
-                ✕
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
               </button>
             </div>
 
@@ -559,7 +676,11 @@ export default function Tickets() {
                   </label>
                   <select
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    onChange={(e) => {
+                      const cat = e.target.value;
+                      const items = categoryItemMap[cat] || categoryItemMap.Hardware;
+                      setFormData({ ...formData, category: cat, item_type: items[0] });
+                    }}
                     style={{
                       width: "100%",
                       padding: "10px 14px",
@@ -603,27 +724,27 @@ export default function Tickets() {
                       cursor: "pointer"
                     }}
                   >
-                    <option value="Mouse">Mouse</option>
-                    <option value="Keyboard">Keyboard</option>
-                    <option value="Monitor">Monitor / Screen</option>
-                    <option value="Headset">Headset / Headphones</option>
-                    <option value="Charger / Cable">Charger / Cable / Adapter</option>
-                    <option value="Laptop / PC">Laptop / PC / CPU</option>
-                    <option value="Workstation / Desk">Desk / Office Chair</option>
-                    <option value="Other">Other Accessory</option>
+                    {(categoryItemMap[formData.category] || categoryItemMap.Hardware).map((itm) => (
+                      <option key={itm} value={itm}>{itm}</option>
+                    ))}
                   </select>
                 </div>
               </div>
 
               <div>
                 <label style={{ fontSize: "12px", fontWeight: "700", color: "var(--text-main, #1e293b)", display: "block", marginBottom: "6px" }}>
-                  Issue Title
+                  Issue Title <span style={{ color: "#ef4444", fontWeight: "700" }}>*</span> <span style={{ fontSize: "11px", fontWeight: "normal", color: "#64748b" }}>(Max 150 chars)</span>
                 </label>
                 <input
                   type="text"
+                  maxLength={150}
                   placeholder="e.g. Mouse left click not clicking / broken"
+                  required
                   value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, title: e.target.value });
+                    if (fieldErrors.title) setFieldErrors(prev => ({ ...prev, title: "" }));
+                  }}
                   style={{
                     width: "100%",
                     padding: "10px 14px",
@@ -632,20 +753,29 @@ export default function Tickets() {
                     background: "var(--ui-bg, #f8fafc)",
                     fontSize: "13px",
                     boxSizing: "border-box",
+                    ...(fieldErrors.title ? { borderColor: "#ef4444", background: "#fff5f5" } : {})
                   }}
-                  required
                 />
+                {fieldErrors.title && (
+                  <span style={{ color: "#ef4444", fontSize: "12px", marginTop: "5px", display: "block", fontWeight: "500" }}>
+                    {fieldErrors.title}
+                  </span>
+                )}
               </div>
 
               <div>
                 <label style={{ fontSize: "12px", fontWeight: "700", color: "var(--text-main, #1e293b)", display: "block", marginBottom: "6px" }}>
-                  Detailed Description
+                  Detailed Description <span style={{ color: "#ef4444", fontWeight: "700" }}>*</span>
                 </label>
                 <textarea
                   rows={4}
+                  required
                   placeholder="Please describe what happened (e.g. mouse cable frayed, scroll wheel stuck, need replacement mouse to work)."
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  onChange={(e) => {
+                    setFormData({ ...formData, description: e.target.value });
+                    if (fieldErrors.description) setFieldErrors(prev => ({ ...prev, description: "" }));
+                  }}
                   style={{
                     width: "100%",
                     padding: "10px 14px",
@@ -655,9 +785,14 @@ export default function Tickets() {
                     fontSize: "13px",
                     boxSizing: "border-box",
                     resize: "vertical",
+                    ...(fieldErrors.description ? { borderColor: "#ef4444", background: "#fff5f5" } : {})
                   }}
-                  required
                 />
+                {fieldErrors.description && (
+                  <span style={{ color: "#ef4444", fontSize: "12px", marginTop: "5px", display: "block", fontWeight: "500" }}>
+                    {fieldErrors.description}
+                  </span>
+                )}
               </div>
 
               <div>
@@ -727,7 +862,7 @@ export default function Tickets() {
         </div>
       )}
 
-      {/* 🛠️ ADMIN RESOLVE / REMARKS MODAL */}
+      {/* ADMIN RESOLVE / REMARKS MODAL */}
       {selectedTicket && (
         <div
           style={{
@@ -842,6 +977,16 @@ export default function Tickets() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        show={confirmConfig.show}
+        onClose={() => setConfirmConfig((prev) => ({ ...prev, show: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmText={confirmConfig.confirmText}
+        confirmColor={confirmConfig.confirmColor}
+      />
     </div>
   );
 }

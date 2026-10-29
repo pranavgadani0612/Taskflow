@@ -1,6 +1,5 @@
 const express = require("express");
 const router = express.Router();
-const TaskStatus = require("../models/TaskStatus");
 const authMiddleware = require("../middleware/auth");
 const { checkPermission } = require("../middleware/permissions");
 const taskStatusController = require("../controllers/taskStatusController");

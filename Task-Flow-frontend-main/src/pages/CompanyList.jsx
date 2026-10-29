@@ -33,6 +33,8 @@ export default function CompanyList() {
     status: "Active"
   });
 
+  const [fieldErrors, setFieldErrors] = useState({});
+
   const isSuperAdmin = user?.email === "gadanipranav@gmail.com" || user?.role?.name === "Super Admin";
 
   const loadCompanies = async () => {
@@ -55,25 +57,35 @@ export default function CompanyList() {
 
   const edit = (company) => {
     setForm({ ...company });
+    setFieldErrors({});
     setEditId(company._id);
     setShowForm(true);
   };
 
   const save = async () => {
+    const errs = {};
+    if (!form.companyName?.trim()) errs.companyName = "Plese enter company name";
+    if (!form.email?.trim()) errs.email = "Plese enter email";
+    if (!form.contactPersonName?.trim()) errs.contactPersonName = "Plese enter contact person name";
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      return;
+    }
+
     // --- FRONTEND VALIDATION ---
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const phoneRegex = /^[0-9]{10}$/;
     const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
     const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 
-    if (!form.companyName?.trim()) return showToast("Company Name is required", "error");
-    if (!form.email?.trim() || !emailRegex.test(form.email)) return showToast("Valid email is required", "error");
+    if (!emailRegex.test(form.email)) return showToast("Valid email is required", "error");
     if (form.phone && !phoneRegex.test(form.phone)) return showToast("Phone must be 10 digits", "error");
     
     if (form.gstNumber && !gstRegex.test(form.gstNumber.toUpperCase())) return showToast("Invalid GST format", "error");
     if (form.panNumber && !panRegex.test(form.panNumber.toUpperCase())) return showToast("Invalid PAN format", "error");
 
     try {
+      setFieldErrors({});
       const sanitizedForm = { ...form };
       if (sanitizedForm.gstNumber) sanitizedForm.gstNumber = sanitizedForm.gstNumber.toUpperCase();
       if (sanitizedForm.panNumber) sanitizedForm.panNumber = sanitizedForm.panNumber.toUpperCase();
@@ -82,7 +94,6 @@ export default function CompanyList() {
         await API.put(`/companies/${editId}`, sanitizedForm);
         showToast("Company updated successfully");
       } else {
-        // If there was an "Add" button, it would go here
         await API.post("/companies", sanitizedForm);
         showToast("Company added successfully");
       }
@@ -174,9 +185,42 @@ export default function CompanyList() {
         saveText="Update"
       >
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-          <TextInput label="Company Name" name="companyName" value={form.companyName} onChange={handleFormChange} />
-          <TextInput label="Contact Person" name="contactPersonName" value={form.contactPersonName} onChange={handleFormChange} />
-          <TextInput label="Email" name="email" value={form.email} onChange={handleFormChange} />
+          <div>
+            <TextInput 
+              label="Company Name *" 
+              name="companyName" 
+              value={form.companyName} 
+              onChange={(e) => {
+                handleFormChange(e);
+                if (fieldErrors.companyName) setFieldErrors(prev => ({ ...prev, companyName: null }));
+              }} 
+              error={fieldErrors.companyName}
+            />
+          </div>
+          <div>
+            <TextInput 
+              label="Contact Person *" 
+              name="contactPersonName" 
+              value={form.contactPersonName} 
+              onChange={(e) => {
+                handleFormChange(e);
+                if (fieldErrors.contactPersonName) setFieldErrors(prev => ({ ...prev, contactPersonName: null }));
+              }} 
+              error={fieldErrors.contactPersonName}
+            />
+          </div>
+          <div>
+            <TextInput 
+              label="Email *" 
+              name="email" 
+              value={form.email} 
+              onChange={(e) => {
+                handleFormChange(e);
+                if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: null }));
+              }} 
+              error={fieldErrors.email}
+            />
+          </div>
           <TextInput label="Phone" name="phone" value={form.phone} onChange={handleFormChange} maxLength={10} />
           <TextInput label="GST Number" name="gstNumber" value={form.gstNumber} onChange={handleFormChange} maxLength={15} />
           <TextInput label="PAN Number" name="panNumber" value={form.panNumber} onChange={handleFormChange} maxLength={10} />

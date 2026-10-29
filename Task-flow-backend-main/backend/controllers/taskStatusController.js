@@ -12,7 +12,7 @@ exports.getAll = async (req, res) => {
 exports.create = async (req, res) => {
   try {
     const { name, status, project } = req.body;
-    if (!name) return res.status(400).json({ message: "Name required" });
+    if (!name || !name.trim()) return res.status(400).json({ error: "Plese enter status name", message: "Plese enter status name" });
 
     const id = `status_${Date.now()}`;
     await pool.query(
@@ -29,9 +29,12 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { name, status, project } = req.body;
+    if (name !== undefined && !name.trim()) {
+      return res.status(400).json({ error: "Plese enter status name", message: "Plese enter status name" });
+    }
     await pool.query(
       "UPDATE task_statuses SET name = COALESCE(?, name), status = COALESCE(?, status), project_id = COALESCE(?, project_id) WHERE id = ?",
-      [name, status, project, req.params.id]
+      [name ? name.trim() : null, status, project, req.params.id]
     );
 
     const [rows] = await pool.query("SELECT id as _id, id, name, status, project_id as project FROM task_statuses WHERE id = ?", [req.params.id]);

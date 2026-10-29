@@ -5,6 +5,7 @@ import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import PageHeader from "../components/common/PageHeader";
 import FormModal from "../components/common/FormModal";
+import ConfirmModal from "../components/common/ConfirmModal";
 import DataTable from "../components/common/DataTable";
 import { TextInput, SelectField } from "../components/common/FormFields";
 import { SparkleIcon, CheckIcon, WrenchIcon, ClipboardIcon } from "../components/common/Icons";
@@ -17,10 +18,34 @@ export default function Subscription() {
   const [upgrading, setUpgrading] = useState(null);
   const [planSelected, setPlanSelected] = useState(false); // tracks if a plan was just chosen
 
+  const [confirmConfig, setConfirmConfig] = useState({
+    show: false,
+    title: "Confirmation",
+    message: "",
+    onConfirm: () => {},
+    confirmText: "Confirm",
+    confirmColor: "var(--danger-color)"
+  });
+
+  const askConfirm = (title, message, onConfirm, confirmText = "Delete", confirmColor = "var(--danger-color)") => {
+    setConfirmConfig({
+      show: true,
+      title,
+      message,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, show: false }));
+        await onConfirm();
+      },
+      confirmText,
+      confirmColor
+    });
+  };
+
   // Super Admin Management State
   const [showModal, setShowModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [formData, setFormData] = useState({
     name: "", billingCycle: "monthly", price: 0,
     maxProjects: 1, maxTasks: 25, maxStaff: 5, maxDocuments: 10,
@@ -74,6 +99,7 @@ export default function Subscription() {
   // Super Admin Actions
   const openAddModal = () => {
     setEditingPlan(null);
+    setFieldErrors({});
     setFormData({
       name: "", billingCycle: "monthly", price: 0,
       maxProjects: 1, maxTasks: 25, maxStaff: 5, maxDocuments: 10,
@@ -84,12 +110,14 @@ export default function Subscription() {
 
   const openEditModal = (plan) => {
     setEditingPlan(plan);
+    setFieldErrors({});
     setFormData({ ...plan });
     setShowModal(true);
   };
 
   const handleSavePlan = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    setFieldErrors({});
     setSaving(true);
     try {
       if (editingPlan) {
@@ -100,23 +128,41 @@ export default function Subscription() {
         showToast("Plan created successfully");
       }
       setShowModal(false);
+      setFieldErrors({});
       loadData();
     } catch (err) {
-      showToast(err.response?.data?.error || "Operation failed", "error");
+      const errMsg = err.response?.data?.error || err.message || "Operation failed";
+      let matched = false;
+      if (errMsg.toLowerCase().includes("plan name") || errMsg.toLowerCase().includes("name")) {
+        setFieldErrors(prev => ({ ...prev, name: "Plese enter plan name" }));
+        matched = true;
+      }
+      if (errMsg.toLowerCase().includes("price")) {
+        setFieldErrors(prev => ({ ...prev, price: "Plese enter price" }));
+        matched = true;
+      }
+      if (!matched) {
+        showToast(errMsg, "error");
+      }
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeletePlan = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this plan? This may affect companies currently on this plan.")) return;
-    try {
-      await API.delete(`/subscriptions/plans/${id}`);
-      showToast("Plan deleted successfully");
-      loadData();
-    } catch (err) {
-      showToast(err.response?.data?.error || "Delete failed", "error");
-    }
+  const handleDeletePlan = (id) => {
+    askConfirm(
+      "Delete Plan",
+      "Are you sure you want to delete this plan? This may affect companies currently on this plan.",
+      async () => {
+        try {
+          await API.delete(`/subscriptions/plans/${id}`);
+          showToast("Plan deleted successfully");
+          loadData();
+        } catch (err) {
+          showToast(err.response?.data?.error || "Delete failed", "error");
+        }
+      }
+    );
   };
 
   const formatLimit = (val) => (val === -1 ? "Unlimited" : val);
@@ -479,10 +525,14 @@ export default function Subscription() {
             label="Plan Name"
             name="name"
             value={formData.name}
-            onChange={e => setFormData({ ...formData, name: e.target.value })}
+            onChange={e => {
+              setFormData({ ...formData, name: e.target.value });
+              if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: null }));
+            }}
             placeholder="e.g. Premium Yearly"
             style={{ gridColumn: "span 2" }}
             required
+            error={fieldErrors.name}
           />
           <SelectField
             label="Billing Cycle"
@@ -498,8 +548,12 @@ export default function Subscription() {
             label="Price ($)"
             type="number"
             value={formData.price}
-            onChange={e => setFormData({ ...formData, price: Number(e.target.value) })}
+            onChange={e => {
+              setFormData({ ...formData, price: e.target.value === "" ? "" : Number(e.target.value) });
+              if (fieldErrors.price) setFieldErrors(prev => ({ ...prev, price: null }));
+            }}
             required
+            error={fieldErrors.price}
           />
 
           <div style={{ gridColumn: "span 2", marginTop: "16px" }}>
@@ -613,6 +667,16 @@ export default function Subscription() {
           </div>
         </div>
       </FormModal>
+
+      <ConfirmModal
+        show={confirmConfig.show}
+        onClose={() => setConfirmConfig(prev => ({ ...prev, show: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmText={confirmConfig.confirmText}
+        confirmColor={confirmConfig.confirmColor}
+      />
     </div>
   );
 }

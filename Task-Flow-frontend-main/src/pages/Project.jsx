@@ -21,8 +21,20 @@ export default function Project() {
     const { hasPermission: ctxHasPermission } = usePermissions();
     const { selectedCompany } = useCompany();
 
-    const isSuperAdmin = user?.email === "gadanipranav@gmail.com" || user?.role?.name === "Super Admin";
-    const isCompanyOwner = user?.role?.name === "Company Owner";
+    const roleName = String(user?.role?.name || "").toLowerCase().trim();
+    const roleId = String(user?.role?.id || user?.role?._id || user?.role || "").toLowerCase().trim();
+    const position = String(user?.position || "").toLowerCase().trim();
+
+    const isSuperAdmin = user?.email === "gadanipranav@gmail.com" || roleName === "super admin";
+    const isCompanyOwner = isSuperAdmin ||
+                           roleName.includes("owner") || 
+                           roleName.includes("admin") || 
+                           roleName.includes("manager") ||
+                           roleId === "role_owner" || 
+                           roleId === "role_superadmin" || 
+                           position.includes("manager") || 
+                           position.includes("owner") || 
+                           position.includes("admin");
 
     const hasPermission = (module, action = "read") => {
         if (isSuperAdmin || isCompanyOwner) return true;
@@ -35,6 +47,7 @@ export default function Project() {
         assignedTo: [],
         status: "Active",
     });
+    const [fieldErrors, setFieldErrors] = useState({});
 
     // Toast notification
     const showToast = (msg, type = "success") => {
@@ -87,25 +100,21 @@ export default function Project() {
     };
 
     const save = async () => {
-        // Validation
-        if (!form.name.trim()) {
+        if (!form.name || !form.name.trim()) {
             showToast("Project name is required", "error");
             return;
         }
-        if (form.name.length > 100) {
+        if (form.name && form.name.length > 100) {
             showToast("Project name must be 100 characters or less", "error");
             return;
         }
-        if (form.description.length > 500) {
+        if (form.description && form.description.length > 500) {
             showToast("Project description must be 500 characters or less", "error");
-            return;
-        }
-        if (form.assignedTo.length === 0) {
-            showToast("Please assign at least one user", "error");
             return;
         }
 
         try {
+            setFieldErrors({});
             if (editId) {
                 const originalProject = projects.find(p => p._id === editId);
                 if (originalProject) {
@@ -123,6 +132,7 @@ export default function Project() {
                         setEditId(null);
                         setStaffSearch("");
                         setIsDropdownOpen(false);
+                        setFieldErrors({});
                         setForm({
                             name: "",
                             description: "",
@@ -143,6 +153,7 @@ export default function Project() {
             setEditId(null);
             setStaffSearch("");
             setIsDropdownOpen(false);
+            setFieldErrors({});
             setForm({
                 name: "",
                 description: "",
@@ -152,7 +163,15 @@ export default function Project() {
             await load();
         } catch (error) {
             console.error(error);
-            showToast("Error saving project", "error");
+            const serverMsg = error.response?.data?.error || error.response?.data?.message;
+            const field = error.response?.data?.field;
+            if (field && serverMsg) {
+                setFieldErrors({ [field]: serverMsg });
+            } else if (serverMsg && serverMsg.toLowerCase().includes("project name")) {
+                setFieldErrors({ name: serverMsg });
+            } else {
+                showToast(serverMsg || "Error saving project", "error");
+            }
         }
     };
 
@@ -277,16 +296,28 @@ export default function Project() {
             >
                 <div className="form-group">
                     <label style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>PROJECT NAME</span>
+                        <span>
+                            PROJECT NAME <span style={{ color: "#ef4444", fontWeight: "700" }}>*</span>
+                        </span>
                         <span style={{ fontSize: '11px', color: '#94a3b8' }}>{form.name.length}/100</span>
                     </label>
                     <input
                         className="form-control"
+                        required
                         placeholder="e.g. Website Redesign"
                         value={form.name}
-                        onChange={(e) => setForm({ ...form, name: e.target.value })}
+                        onChange={(e) => {
+                            setForm({ ...form, name: e.target.value });
+                            if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: "" }));
+                        }}
                         maxLength={100}
+                        style={fieldErrors.name ? { borderColor: "#ef4444", background: "#fff5f5" } : {}}
                     />
+                    {fieldErrors.name && (
+                        <span style={{ color: "#ef4444", fontSize: "12px", marginTop: "5px", display: "block", fontWeight: "500" }}>
+                            {fieldErrors.name}
+                        </span>
+                    )}
                 </div>
 
                 <div className="form-group">
@@ -311,7 +342,7 @@ export default function Project() {
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "12px" }}>
                         {form.assignedTo.length === 0 && <span style={{ fontSize: "13px", color: "#94a3b8", fontStyle: 'italic' }}>No users assigned yet.</span>}
                         {form.assignedTo.map(staffId => {
-                            const user = staff.find(s => s._id === staffId);
+                            const user = staff.find(s => (s._id || s.id) === staffId);
                             if (!user) return null;
                             return (
                                 <span key={staffId} style={{
@@ -353,12 +384,16 @@ export default function Project() {
                                 marginTop: '8px', border: '1px solid var(--ui-border)', padding: '6px'
                             }}>
                                 {staff
+                                    .filter(s => s.status !== "Inactive")
+                                    .filter(s => !form.assignedTo.includes(s._id || s.id))
                                     .filter(s => {
-                                        const roleStr = (s.position || s.role?.name || "Staff").toLowerCase();
-                                        return roleStr.includes("staff") || roleStr.includes("manager") || roleStr.includes("owner") || roleStr.includes("admin");
+                                        if (!staffSearch) return true;
+                                        const search = staffSearch.toLowerCase();
+                                        const nameMatch = s.name?.toLowerCase().includes(search);
+                                        const posMatch = (s.position || s.role?.name || "").toLowerCase().includes(search);
+                                        const emailMatch = s.email?.toLowerCase().includes(search);
+                                        return nameMatch || posMatch || emailMatch;
                                     })
-                                    .filter(s => !form.assignedTo.includes(s._id))
-                                    .filter(s => s.name?.toLowerCase().includes(staffSearch.toLowerCase()) || (s.position || s.role?.name || "Staff").toLowerCase().includes(staffSearch.toLowerCase()))
                                     .map((s) => (
                                         <div
                                             key={s._id}
