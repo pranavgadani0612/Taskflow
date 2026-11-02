@@ -9,14 +9,17 @@ const { sendDocumentMail, sendAccessRequestMail } = require("../config/mail");
 const APP_LINK = process.env.APP_URL || "http://localhost:5173";
 const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL || "gadanipranav@gmail.com";
 
-// Multer disk storage for uploads
+// Multer disk storage for uploads with 50MB limit
 const storage = multer.diskStorage({
   destination: "./uploads",
   filename: (req, file, cb) => {
     cb(null, Date.now() + path.extname(file.originalname));
   },
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50 MB
+});
 
 // Helper: Format MySQL document row for frontend
 function formatDocument(row, staffMap = {}, projectMap = {}) {

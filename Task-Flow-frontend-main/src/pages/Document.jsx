@@ -639,8 +639,31 @@ export default function Document() {
 
                 {form.textType === 'upload' ? (
                     <div style={{ marginBottom: "15px" }}>
-                        <label style={labelStyle}>Upload File</label>
-                        <input type="file" className="form-control" onChange={e => setForm({ ...form, file: e.target.files[0] })} />
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                            <label style={{ ...labelStyle, marginBottom: 0 }}>Upload File</label>
+                            <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", fontWeight: "500" }}>Max size: 50 MB</span>
+                        </div>
+                        <input
+                            type="file"
+                            className="form-control"
+                            onChange={e => {
+                                const selected = e.target.files[0];
+                                if (selected && selected.size > 50 * 1024 * 1024) {
+                                    setFieldErrors(prev => ({ ...prev, file: "File size exceeds 50 MB limit. Please select a smaller file." }));
+                                    e.target.value = "";
+                                    setForm(prev => ({ ...prev, file: null }));
+                                } else {
+                                    setFieldErrors(prev => ({ ...prev, file: null }));
+                                    setForm(prev => ({ ...prev, file: selected }));
+                                }
+                            }}
+                            style={fieldErrors.file ? { borderColor: "#ef4444" } : {}}
+                        />
+                        {fieldErrors.file && (
+                            <div style={{ color: "#ef4444", fontSize: "12px", marginTop: "4px" }}>
+                                {fieldErrors.file}
+                            </div>
+                        )}
                         {form.oldFile && !form.file && (
                             <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
                                 <span>{getFileIcon(form.oldFile)}</span>
