@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import API from "../api/api";
+import { formatDuration } from "../utils/formatDuration";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { usePermissions } from "../contexts/PermissionContext";
-import { EditIcon, TrashIcon, TimerIcon, ShieldIcon, CheckIcon, CloseIcon, IconAlertTriangle, IconInfo } from "../components/common/Icons";
+import { EditIcon, TrashIcon, TimerIcon, ShieldIcon, CheckIcon, CloseIcon, IconAlertTriangle, IconInfo, DownloadIcon } from "../components/common/Icons";
+import html2pdf from "html2pdf.js";
 import ConfirmModal from "../components/common/ConfirmModal";
 import FormModal from "../components/common/FormModal";
 import TimeSelect12h from "../components/common/TimeSelect12h";
@@ -45,16 +47,39 @@ export default function LeaveManagement() {
   const [allBalances, setAllBalances] = useState([]);
   const [myShortLeaves, setMyShortLeaves] = useState([]);
   const [allShortLeaves, setAllShortLeaves] = useState([]);
+  const [staffList, setStaffList] = useState([]);
 
-  // Date filters for Leave Approvals
+  // Date, Employee & Status filters for Leave Approvals (default status: "Pending")
   const [leaveStartDate, setLeaveStartDate] = useState("");
   const [leaveEndDate, setLeaveEndDate] = useState("");
+  const [leaveStatusFilter, setLeaveStatusFilter] = useState("Pending");
+  const [leaveEmployeeFilter, setLeaveEmployeeFilter] = useState("");
 
-  // Date filters for Short Leave Approvals
+  // Date, Employee & Status filters for Short Leave Approvals (default status: "Pending")
   const [shortLeaveStartDate, setShortLeaveStartDate] = useState("");
   const [shortLeaveEndDate, setShortLeaveEndDate] = useState("");
+  const [shortLeaveStatusFilter, setShortLeaveStatusFilter] = useState("Pending");
+  const [shortLeaveEmployeeFilter, setShortLeaveEmployeeFilter] = useState("");
+
+  // Confirmation modal for approving / rejecting leaves
+  const [actionConfirm, setActionConfirm] = useState({
+    show: false,
+    id: null,
+    type: "leave", // "leave" | "shortleave"
+    action: "Approved", // "Approved" | "Rejected"
+    userName: ""
+  });
 
   const filteredAllLeaves = allLeaves.filter(l => {
+    // Status filter
+    if (leaveStatusFilter && leaveStatusFilter !== "All" && l.status !== leaveStatusFilter) return false;
+    // Employee filter
+    if (leaveEmployeeFilter) {
+      const matchEmp = (l.user_id && String(l.user_id) === String(leaveEmployeeFilter)) ||
+                       (l.user_email && l.user_email.toLowerCase() === leaveEmployeeFilter.toLowerCase());
+      if (!matchEmp) return false;
+    }
+    // Date filter
     if (!leaveStartDate && !leaveEndDate) return true;
     const lStart = l.from_date ? new Date(l.from_date).toISOString().slice(0, 10) : "";
     const lEnd = l.to_date ? new Date(l.to_date).toISOString().slice(0, 10) : lStart;
@@ -64,6 +89,15 @@ export default function LeaveManagement() {
   });
 
   const filteredAllShortLeaves = allShortLeaves.filter(sl => {
+    // Status filter
+    if (shortLeaveStatusFilter && shortLeaveStatusFilter !== "All" && (sl.status || "Pending") !== shortLeaveStatusFilter) return false;
+    // Employee filter
+    if (shortLeaveEmployeeFilter) {
+      const matchEmp = (sl.user_id && String(sl.user_id) === String(shortLeaveEmployeeFilter)) ||
+                       (sl.user_email && sl.user_email.toLowerCase() === shortLeaveEmployeeFilter.toLowerCase());
+      if (!matchEmp) return false;
+    }
+    // Date filter
     if (!shortLeaveStartDate && !shortLeaveEndDate) return true;
     const slDate = sl.date ? new Date(sl.date).toISOString().slice(0, 10) : "";
     if (shortLeaveStartDate && slDate < shortLeaveStartDate) return false;
@@ -84,6 +118,7 @@ export default function LeaveManagement() {
   const allShortLeavesPageSize = 10;
   const [balancePage, setBalancePage] = useState(1);
   const balancePageSize = 10;
+  const [balanceYear, setBalanceYear] = useState(new Date().getFullYear());
   const [policyForm, setPolicyForm] = useState({ 
     cl_default: 12, 
     sl_default: 8, 
@@ -91,7 +126,7 @@ export default function LeaveManagement() {
     comp_off_default: 2, 
     max_cl_per_month: 1, 
     max_pl_per_month: 5, 
-    applyToExisting: true 
+    applyToExisting: false 
   });
   const [policyLoading, setPolicyLoading] = useState(false);
   const [, setLoading] = useState(false);
@@ -233,19 +268,19 @@ export default function LeaveManagement() {
     e.preventDefault();
     try {
       setPolicyLoading(true);
-      const res = await API.put("/leave/company-policy", policyForm);
+      const res = await API.put("/leave/company-policy", { ...policyForm, year: balanceYear });
       showToast(res.data?.message || "Company Leave Policy saved!");
-      fetchAllBalances();
-    } catch {
-      showToast("Failed to save company policy", "error");
+      fetchAllBalances(balanceYear);
+    } catch (err) {
+      showToast(err.response?.data?.error || "Failed to save company policy", "error");
     } finally {
       setPolicyLoading(false);
     }
   };
 
-  const fetchAllBalances = async () => {
+  const fetchAllBalances = async (yr = balanceYear) => {
     try {
-      const res = await API.get("/leave/admin/balances");
+      const res = await API.get(`/leave/admin/balances?year=${yr}`);
       setAllBalances(res.data || []);
     } catch {
       showToast("Error loading balances", "error");
@@ -265,7 +300,7 @@ export default function LeaveManagement() {
       });
       showToast(res.data?.message || "Leave balance updated successfully!");
       setEditingBalance(null);
-      fetchAllBalances();
+      fetchAllBalances(balanceYear);
     } catch (err) {
       showToast(err.response?.data?.error || "Failed to update employee balance", "error");
     } finally {
@@ -273,24 +308,25 @@ export default function LeaveManagement() {
     }
   };
 
-  // Max short leave duration (minutes) - configured by Super Admin
+  // Max short leave duration (minutes) & monthly count - configured by Super Admin
   const [maxShortMins, setMaxShortMins] = useState(120);
   const [shortHoursInput, setShortHoursInput] = useState("2");
+  const [maxMonthlyShortCount, setMaxMonthlyShortCount] = useState(2);
+  const [shortMonthlyCountInput, setShortMonthlyCountInput] = useState("2");
   const [savingShortLimit, setSavingShortLimit] = useState(false);
 
-  // 90 -> "1 hr 30 min", 120 -> "2 hrs"
-  const formatShortLimit = (mins) => {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return [h > 0 ? `${h} ${h === 1 ? "hr" : "hrs"}` : "", m > 0 ? `${m} min` : ""].filter(Boolean).join(" ");
-  };
+  // 90 -> "1 h 30 min", 120 -> "2 h"
+  const formatShortLimit = (mins) => formatDuration(mins / 60);
 
   const fetchShortLeaveSettings = async () => {
     try {
       const res = await API.get("/leave/short-leave-settings");
       const mins = Number(res.data?.max_short_leave_minutes) || 120;
+      const count = Number(res.data?.max_short_leaves_per_month) || 2;
       setMaxShortMins(mins);
       setShortHoursInput(String(mins / 60));
+      setMaxMonthlyShortCount(count);
+      setShortMonthlyCountInput(String(count));
     } catch (err) {
       console.error("Error loading short leave settings:", err);
     }
@@ -298,19 +334,37 @@ export default function LeaveManagement() {
 
   const handleSaveShortLimit = async () => {
     const hours = parseFloat(shortHoursInput);
+    const count = parseInt(shortMonthlyCountInput);
     if (isNaN(hours) || hours <= 0 || hours > 12) {
-      showToast("Plese enter valid hours (between 0.5 and 12)", "error");
+      showToast("Please enter valid hours (between 0.5 and 12)", "error");
+      return;
+    }
+    if (isNaN(count) || count < 1 || count > 31) {
+      showToast("Please enter a valid monthly leave count (between 1 and 31)", "error");
       return;
     }
     setSavingShortLimit(true);
     try {
-      const res = await API.put("/leave/short-leave-settings", { max_short_leave_hours: hours });
+      const res = await API.put("/leave/short-leave-settings", {
+        max_short_leave_hours: hours,
+        max_short_leaves_per_month: count
+      });
       setMaxShortMins(res.data.max_short_leave_minutes);
-      showToast(res.data.message || "Short leave limit updated!");
+      setMaxMonthlyShortCount(res.data.max_short_leaves_per_month);
+      showToast(res.data.message || "Short leave settings updated!");
     } catch (err) {
       showToast(err.response?.data?.error || "Failed to update short leave limit", "error");
     } finally {
       setSavingShortLimit(false);
+    }
+  };
+
+  const fetchStaff = async () => {
+    try {
+      const res = await API.get("/staff");
+      setStaffList(res.data || []);
+    } catch (err) {
+      console.error("Error loading staff for filter:", err);
     }
   };
 
@@ -326,6 +380,7 @@ export default function LeaveManagement() {
 
     // Load admin approvals & balances only if user has approval/update permission
     if (canApprove) {
+      fetchStaff();
       fetchAllLeaves();
       fetchAllShortLeaves();
       fetchAdminSummary();
@@ -449,6 +504,255 @@ export default function LeaveManagement() {
     } catch (err) {
       showToast(err.response?.data?.error || "Failed to delete leave", "error");
     }
+  };
+
+  // ── Export Leave Records to CSV / Excel ──
+  const handleExportLeavesExcel = () => {
+    if (!filteredAllLeaves || filteredAllLeaves.length === 0) {
+      showToast("No leave records to export!", "error");
+      return;
+    }
+    const headers = ["Employee Name", "Employee Email", "Leave Type", "From Date", "To Date", "Days", "Day Type", "Reason", "Status", "Applied On"];
+    const rows = filteredAllLeaves.map(l => [
+      `"${(l.user_name || "").replace(/"/g, '""')}"`,
+      `"${(l.user_email || "").replace(/"/g, '""')}"`,
+      `"${(l.leave_type || "").replace(/"/g, '""')}"`,
+      `"${l.from_date ? new Date(l.from_date).toLocaleDateString() : ""}"`,
+      `"${l.to_date ? new Date(l.to_date).toLocaleDateString() : ""}"`,
+      `"${l.total_days || 1}"`,
+      `"${(l.day_type || "Full Day").replace(/"/g, '""')}"`,
+      `"${(l.reason || "").replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`,
+      `"${(l.status || "").replace(/"/g, '""')}"`,
+      `"${l.created_at ? new Date(l.created_at).toLocaleDateString() : ""}"`
+    ]);
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(r => r.join(","))].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const selectedEmp = staffList.find(s => String(s._id || s.id) === String(leaveEmployeeFilter) || s.email === leaveEmployeeFilter);
+    const empNameSlug = selectedEmp ? `_${(selectedEmp.name || selectedEmp.email).replace(/[^a-zA-Z0-9]/g, '_')}` : "";
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Leave_Report${empNameSlug}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast("Leave report downloaded as Excel/CSV successfully!", "success");
+  };
+
+  // ── Export Leave Records to PDF ──
+  const handleExportLeavesPdf = () => {
+    if (!filteredAllLeaves || filteredAllLeaves.length === 0) {
+      showToast("No leave records to export!", "error");
+      return;
+    }
+
+    const selectedEmp = staffList.find(s => String(s._id || s.id) === String(leaveEmployeeFilter) || s.email === leaveEmployeeFilter);
+    const filterTitle = selectedEmp ? `Leave History for ${selectedEmp.name || selectedEmp.email}` : "All Employee Leave Requests Report";
+    const empNameSlug = selectedEmp ? `_${(selectedEmp.name || selectedEmp.email).replace(/[^a-zA-Z0-9]/g, '_')}` : "";
+
+    const container = document.createElement("div");
+    container.style.padding = "24px";
+    container.style.fontFamily = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    container.style.color = "#1e293b";
+    container.style.background = "#ffffff";
+
+    const tableRows = filteredAllLeaves.map((l, index) => {
+      const statusColor = l.status === "Approved" ? "#16a34a" : l.status === "Rejected" ? "#dc2626" : "#d97706";
+      const statusBg = l.status === "Approved" ? "#dcfce7" : l.status === "Rejected" ? "#fee2e2" : "#fef3c7";
+      return `
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+          <td style="padding: 8px 6px;">${index + 1}</td>
+          <td style="padding: 8px 6px; font-weight: 600;">
+            ${l.user_name || "—"}<br/>
+            <span style="font-size: 10px; color: #64748b; font-weight: 400;">${l.user_email || ""}</span>
+          </td>
+          <td style="padding: 8px 6px;">${l.leave_type || "Leave"}</td>
+          <td style="padding: 8px 6px; white-space: nowrap;">
+            ${l.from_date ? new Date(l.from_date).toLocaleDateString() : ""}
+            ${l.to_date && l.to_date !== l.from_date ? ` to ${new Date(l.to_date).toLocaleDateString()}` : ""}
+          </td>
+          <td style="padding: 8px 6px; text-align: center; font-weight: 600;">${l.total_days || 1}</td>
+          <td style="padding: 8px 6px; max-width: 200px;">${(l.reason || "").replace(/</g, "&lt;")}</td>
+          <td style="padding: 8px 6px; text-align: center;">
+            <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 700; color: ${statusColor}; background: ${statusBg};">
+              ${l.status}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    container.innerHTML = `
+      <div style="margin-bottom: 20px; border-bottom: 2px solid #3b82f6; padding-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div>
+          <h2 style="margin: 0 0 6px 0; font-size: 20px; color: #0f172a; font-weight: 800;">Padya Soft — Leave Records</h2>
+          <div style="font-size: 13px; color: #475569; font-weight: 600;">${filterTitle}</div>
+        </div>
+        <div style="text-align: right; font-size: 11px; color: #64748b;">
+          <div>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</div>
+          <div>Total Records: ${filteredAllLeaves.length}</div>
+          ${leaveStatusFilter ? `<div>Status Filter: <strong>${leaveStatusFilter}</strong></div>` : ""}
+        </div>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px;">
+        <thead>
+          <tr style="background: #f1f5f9; color: #334155; font-size: 11px; font-weight: 700; border-bottom: 2px solid #cbd5e1;">
+            <th style="padding: 8px 6px; width: 30px;">#</th>
+            <th style="padding: 8px 6px;">Employee</th>
+            <th style="padding: 8px 6px;">Leave Type</th>
+            <th style="padding: 8px 6px;">Duration</th>
+            <th style="padding: 8px 6px; text-align: center;">Days</th>
+            <th style="padding: 8px 6px;">Reason</th>
+            <th style="padding: 8px 6px; text-align: center;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    `;
+
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: `Leave_Report${empNameSlug}_${new Date().toISOString().slice(0, 10)}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: "mm", format: "a4", orientation: "landscape" }
+    };
+
+    html2pdf().set(opt).from(container).save().then(() => {
+      showToast("Leave report downloaded as PDF successfully!", "success");
+    }).catch(err => {
+      console.error("PDF generation failed:", err);
+      showToast("Failed to generate PDF. Please try again.", "error");
+    });
+  };
+
+  // ── Export Short Leave Records to CSV / Excel ──
+  const handleExportShortLeavesExcel = () => {
+    if (!filteredAllShortLeaves || filteredAllShortLeaves.length === 0) {
+      showToast("No short leave records to export!", "error");
+      return;
+    }
+    const headers = ["Employee Name", "Employee Email", "Date", "From Time", "To Time", "Duration (Hours)", "Reason", "Status", "Applied On"];
+    const rows = filteredAllShortLeaves.map(sl => [
+      `"${(sl.user_name || "").replace(/"/g, '""')}"`,
+      `"${(sl.user_email || "").replace(/"/g, '""')}"`,
+      `"${sl.date ? new Date(sl.date).toLocaleDateString() : ""}"`,
+      `"${sl.from_time || ""}"`,
+      `"${sl.to_time || ""}"`,
+      `"${sl.hours || (sl.duration_minutes ? (sl.duration_minutes / 60).toFixed(1) : "") || ""}"`,
+      `"${(sl.reason || "").replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`,
+      `"${(sl.status || "Pending").replace(/"/g, '""')}"`,
+      `"${sl.created_at ? new Date(sl.created_at).toLocaleDateString() : ""}"`
+    ]);
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(r => r.join(","))].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const selectedEmp = staffList.find(s => String(s._id || s.id) === String(shortLeaveEmployeeFilter) || s.email === shortLeaveEmployeeFilter);
+    const empNameSlug = selectedEmp ? `_${(selectedEmp.name || selectedEmp.email).replace(/[^a-zA-Z0-9]/g, '_')}` : "";
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Short_Leave_Report${empNameSlug}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast("Short leave report downloaded as Excel/CSV successfully!", "success");
+  };
+
+  // ── Export Short Leave Records to PDF ──
+  const handleExportShortLeavesPdf = () => {
+    if (!filteredAllShortLeaves || filteredAllShortLeaves.length === 0) {
+      showToast("No short leave records to export!", "error");
+      return;
+    }
+
+    const selectedEmp = staffList.find(s => String(s._id || s.id) === String(shortLeaveEmployeeFilter) || s.email === shortLeaveEmployeeFilter);
+    const filterTitle = selectedEmp ? `Short Leave History for ${selectedEmp.name || selectedEmp.email}` : "All Employee Short Leave Requests Report";
+    const empNameSlug = selectedEmp ? `_${(selectedEmp.name || selectedEmp.email).replace(/[^a-zA-Z0-9]/g, '_')}` : "";
+
+    const container = document.createElement("div");
+    container.style.padding = "24px";
+    container.style.fontFamily = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    container.style.color = "#1e293b";
+    container.style.background = "#ffffff";
+
+    const tableRows = filteredAllShortLeaves.map((sl, index) => {
+      const statusColor = sl.status === "Approved" ? "#16a34a" : sl.status === "Rejected" ? "#dc2626" : "#d97706";
+      const statusBg = sl.status === "Approved" ? "#dcfce7" : sl.status === "Rejected" ? "#fee2e2" : "#fef3c7";
+      const durText = sl.duration_minutes ? formatDuration(sl.duration_minutes) : `${sl.hours || 0} hrs`;
+      return `
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+          <td style="padding: 8px 6px;">${index + 1}</td>
+          <td style="padding: 8px 6px; font-weight: 600;">
+            ${sl.user_name || "—"}<br/>
+            <span style="font-size: 10px; color: #64748b; font-weight: 400;">${sl.user_email || ""}</span>
+          </td>
+          <td style="padding: 8px 6px; white-space: nowrap;">
+            ${sl.date ? new Date(sl.date).toLocaleDateString() : ""}
+          </td>
+          <td style="padding: 8px 6px; white-space: nowrap;">
+            ${sl.from_time || ""} - ${sl.to_time || ""}
+          </td>
+          <td style="padding: 8px 6px; text-align: center; font-weight: 600;">${durText}</td>
+          <td style="padding: 8px 6px; max-width: 220px;">${(sl.reason || "").replace(/</g, "&lt;")}</td>
+          <td style="padding: 8px 6px; text-align: center;">
+            <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 700; color: ${statusColor}; background: ${statusBg};">
+              ${sl.status || "Pending"}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    container.innerHTML = `
+      <div style="margin-bottom: 20px; border-bottom: 2px solid #8b5cf6; padding-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div>
+          <h2 style="margin: 0 0 6px 0; font-size: 20px; color: #0f172a; font-weight: 800;">Padya Soft — Short Leave Records</h2>
+          <div style="font-size: 13px; color: #475569; font-weight: 600;">${filterTitle}</div>
+        </div>
+        <div style="text-align: right; font-size: 11px; color: #64748b;">
+          <div>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</div>
+          <div>Total Records: ${filteredAllShortLeaves.length}</div>
+          ${shortLeaveStatusFilter ? `<div>Status Filter: <strong>${shortLeaveStatusFilter}</strong></div>` : ""}
+        </div>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; text-align: left; margin-top: 10px;">
+        <thead>
+          <tr style="background: #f1f5f9; color: #334155; font-size: 11px; font-weight: 700; border-bottom: 2px solid #cbd5e1;">
+            <th style="padding: 8px 6px; width: 30px;">#</th>
+            <th style="padding: 8px 6px;">Employee</th>
+            <th style="padding: 8px 6px;">Date</th>
+            <th style="padding: 8px 6px;">Time Window</th>
+            <th style="padding: 8px 6px; text-align: center;">Duration</th>
+            <th style="padding: 8px 6px;">Reason</th>
+            <th style="padding: 8px 6px; text-align: center;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    `;
+
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: `Short_Leave_Report${empNameSlug}_${new Date().toISOString().slice(0, 10)}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: "mm", format: "a4", orientation: "landscape" }
+    };
+
+    html2pdf().set(opt).from(container).save().then(() => {
+      showToast("Short leave report downloaded as PDF successfully!", "success");
+    }).catch(err => {
+      console.error("PDF generation failed:", err);
+      showToast("Failed to generate PDF. Please try again.", "error");
+    });
   };
 
   const openAdminEdit = (l) => {
@@ -635,6 +939,38 @@ export default function LeaveManagement() {
     }
   };
 
+  // Super Admin Action: Trigger confirmation popup for Approve / Reject
+  const triggerLeaveActionConfirm = (id, action, userName) => {
+    setActionConfirm({
+      show: true,
+      id,
+      type: "leave",
+      action,
+      userName: userName || "this employee"
+    });
+  };
+
+  const triggerShortLeaveActionConfirm = (id, action, userName) => {
+    setActionConfirm({
+      show: true,
+      id,
+      type: "shortleave",
+      action,
+      userName: userName || "this employee"
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    const { id, type, action } = actionConfirm;
+    setActionConfirm(prev => ({ ...prev, show: false }));
+    if (!id) return;
+    if (type === "leave") {
+      await handleLeaveAction(id, action);
+    } else {
+      await handleShortLeaveAction(id, action);
+    }
+  };
+
   // Super Admin Action: Approve / Reject Full Leave
   const handleLeaveAction = async (id, action, force = false) => {
     try {
@@ -816,7 +1152,7 @@ export default function LeaveManagement() {
             }}
           >
             <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-              <ShieldIcon size={16} /> Leave Approvals ({allLeaves.filter(l => l.status === "Pending").length})
+              <ShieldIcon size={16} /> Pending Leave Approvals ({allLeaves.filter(l => l.status === "Pending").length})
             </span>
           </button>
         )}
@@ -837,7 +1173,7 @@ export default function LeaveManagement() {
             }}
           >
             <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-              <TimerIcon size={16} /> Short Leave Approvals ({allShortLeaves.filter(sl => sl.status === "Pending").length})
+              <TimerIcon size={16} /> Pending Short Leave Approvals ({allShortLeaves.filter(sl => sl.status === "Pending").length})
             </span>
           </button>
         )}
@@ -1053,9 +1389,6 @@ export default function LeaveManagement() {
           <div className="table-container" style={{ background: "var(--ui-surface, #fff)", borderRadius: "12px", border: "1px solid var(--ui-border, #e2e8f0)", overflowX: "auto", WebkitOverflowScrolling: "touch", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", width: "100%" }}>
             <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--ui-border, #e2e8f0)", fontWeight: "700", color: "var(--text-main, #1e293b)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
               <span>My Leave History</span>
-              <span className="mobile-scroll-hint" style={{ fontSize: "11px", color: "var(--primary-color, #4f46e5)", fontWeight: "600", background: "rgba(79, 70, 229, 0.12)", padding: "3px 8px", borderRadius: "6px" }}>
-                ⇄ Swipe table for full info
-              </span>
             </div>
             <table style={{ width: "100%", minWidth: "650px", borderCollapse: "collapse", textAlign: "left" }}>
               <thead>
@@ -1269,20 +1602,17 @@ export default function LeaveManagement() {
                   );
                 }
                 if (diffM > maxShortMins) {
-                  const hrs = Math.floor(diffM / 60);
-                  const mins = diffM % 60;
                   return (
                     <div style={{ fontSize: "12px", color: "#dc2626", fontWeight: "600", marginTop: "-4px", background: "rgba(220, 38, 38, 0.08)", padding: "6px 10px", borderRadius: "6px", border: "1px solid rgba(220, 38, 38, 0.2)", display: "flex", alignItems: "center", gap: "6px" }}>
                       <IconAlertTriangle size={14} color="#dc2626" />
-                      <span>Selected duration: {hrs}h {mins > 0 ? `${mins}m` : ""} ({diffM} mins). Short leave cannot exceed {formatShortLimit(maxShortMins)}!</span>
+                      <span>Selected duration: {formatDuration(diffM / 60)}. Short leave cannot exceed {formatShortLimit(maxShortMins)}!</span>
                     </div>
                   );
                 }
-                const hrs = (diffM / 60).toFixed(1);
                 return (
                   <div style={{ fontSize: "12px", color: "#0284c7", fontWeight: "500", marginTop: "-4px", display: "flex", alignItems: "center", gap: "6px" }}>
                     <IconInfo size={14} color="#0284c7" />
-                    <span>Duration: {hrs} hr ({diffM} minutes) — valid (max {formatShortLimit(maxShortMins)} allowed)</span>
+                    <span>Duration: {formatDuration(diffM / 60)} — valid (max {formatShortLimit(maxShortMins)} allowed)</span>
                   </div>
                 );
               })()}
@@ -1357,9 +1687,6 @@ export default function LeaveManagement() {
           <div className="table-container" style={{ background: "var(--ui-surface, #fff)", borderRadius: "12px", border: "1px solid var(--ui-border, #e2e8f0)", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", width: "100%", overflow: "hidden" }}>
             <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--ui-border, #e2e8f0)", fontWeight: "700", color: "var(--text-main, #1e293b)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
               <span>My Short Leave History</span>
-              <span className="mobile-scroll-hint" style={{ fontSize: "11px", color: "#06b6d4", fontWeight: "600", background: "rgba(6, 182, 212, 0.12)", padding: "3px 8px", borderRadius: "6px" }}>
-                ⇄ Swipe table for full info
-              </span>
             </div>
             <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
               <table style={{ width: "100%", minWidth: "650px", borderCollapse: "collapse", textAlign: "left" }}>
@@ -1385,7 +1712,7 @@ export default function LeaveManagement() {
                     <tr key={sl.id} style={{ borderBottom: "1px solid var(--ui-border, #f1f5f9)", fontSize: "13px" }}>
                       <td style={{ padding: "12px 16px", fontWeight: "600", color: "var(--text-main, #1e293b)" }}>{new Date(sl.date).toLocaleDateString()}</td>
                       <td style={{ padding: "12px 16px", color: "var(--text-main, #334155)" }}>{sl.from_time} - {sl.to_time}</td>
-                      <td style={{ padding: "12px 16px", fontWeight: "600", color: "var(--text-main, #1e293b)" }}>{sl.hours} hrs</td>
+                      <td style={{ padding: "12px 16px", fontWeight: "600", color: "var(--text-main, #1e293b)" }}>{formatDuration(sl.hours)}</td>
                       <td style={{ padding: "12px 16px", color: "var(--text-muted, #94a3b8)" }}>{sl.reason}</td>
                       <td style={{ padding: "12px 16px" }}>
                         <span style={{
@@ -1453,8 +1780,67 @@ export default function LeaveManagement() {
           <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--ui-border, #e2e8f0)", fontWeight: "700", color: "var(--text-main, #1e293b)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
             <span>All Employee Leave Requests (Approvals & Decision)</span>
             
-            {/* Start Date & End Date Filter */}
+            {/* Employee, Status, Start Date & End Date Filter */}
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              {/* Employee Filter */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", fontWeight: "600" }}>Employee:</span>
+                <select
+                  value={leaveEmployeeFilter}
+                  onChange={(e) => {
+                    const newEmp = e.target.value;
+                    setLeaveEmployeeFilter(newEmp);
+                    // If a specific employee is chosen and status is currently Pending, automatically set to All so their entire leave history is visible
+                    if (newEmp && leaveStatusFilter === "Pending") {
+                      setLeaveStatusFilter("All");
+                    }
+                    setAllLeavesPage(1);
+                  }}
+                  style={{
+                    padding: "5px 10px",
+                    fontSize: "12px",
+                    border: "1px solid var(--ui-border, #cbd5e1)",
+                    borderRadius: "6px",
+                    background: "var(--ui-surface, #fff)",
+                    color: "var(--text-main, #1e293b)"
+                  }}
+                >
+                  <option value="">All Employees</option>
+                  {staffList.map(s => (
+                    <option key={s._id || s.id} value={s.email || s._id || s.id}>
+                      {s.name || s.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", fontWeight: "600" }}>Status:</span>
+                <select
+                  value={leaveStatusFilter}
+                  onChange={(e) => {
+                    setLeaveStatusFilter(e.target.value);
+                    setAllLeavesPage(1);
+                  }}
+                  style={{
+                    padding: "5px 10px",
+                    fontSize: "12px",
+                    border: "1px solid var(--ui-border, #cbd5e1)",
+                    borderRadius: "6px",
+                    background: "var(--ui-surface, #fff)",
+                    color: "var(--text-main, #1e293b)",
+                    fontWeight: "600"
+                  }}
+                >
+                  <option value="Pending">Pending</option>
+                  <option value="Approved">Approved</option>
+                  <option value="Rejected">Rejected</option>
+                  <option value="All">All Statuses</option>
+                </select>
+              </div>
+
+              {/* Date Filters */}
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", fontWeight: "600" }}>From:</span>
                 <input
@@ -1493,12 +1879,14 @@ export default function LeaveManagement() {
                   }}
                 />
               </div>
-              {(leaveStartDate || leaveEndDate) && (
+              {(leaveStartDate || leaveEndDate || leaveEmployeeFilter || leaveStatusFilter !== "Pending") && (
                 <button
                   type="button"
                   onClick={() => {
                     setLeaveStartDate("");
                     setLeaveEndDate("");
+                    setLeaveEmployeeFilter("");
+                    setLeaveStatusFilter("Pending");
                     setAllLeavesPage(1);
                   }}
                   style={{
@@ -1515,6 +1903,59 @@ export default function LeaveManagement() {
                   Clear Filter
                 </button>
               )}
+
+              {/* Download Buttons: PDF & Excel (CSV) */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
+                <button
+                  type="button"
+                  onClick={handleExportLeavesPdf}
+                  title="Download Leave Records as PDF"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "5px 12px",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: "#dc2626",
+                    background: "#fef2f2",
+                    border: "1px solid #fecaca",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease"
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = "#fee2e2"; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = "#fef2f2"; }}
+                >
+                  <DownloadIcon size={14} color="#dc2626" />
+                  <span>PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportLeavesExcel}
+                  title="Download Leave Records as Excel / CSV"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "5px 12px",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: "#16a34a",
+                    background: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease"
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = "#dcfce7"; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = "#f0fdf4"; }}
+                >
+                  <DownloadIcon size={14} color="#16a34a" />
+                  <span>Excel</span>
+                </button>
+              </div>
             </div>
           </div>
           <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -1573,7 +2014,7 @@ export default function LeaveManagement() {
                         <div style={{ display: "inline-flex", gap: "8px", alignItems: "center" }}>
                           <button
                             type="button"
-                            onClick={() => handleLeaveAction(l.id, "Approved")}
+                            onClick={() => triggerLeaveActionConfirm(l.id, "Approved", l.user_name)}
                             title="Approve Leave"
                             style={{
                               width: "32px",
@@ -1595,7 +2036,7 @@ export default function LeaveManagement() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleLeaveAction(l.id, "Rejected")}
+                            onClick={() => triggerLeaveActionConfirm(l.id, "Rejected", l.user_name)}
                             title="Reject Leave"
                             style={{
                               width: "32px",
@@ -1646,29 +2087,49 @@ export default function LeaveManagement() {
 
       {/* TAB 3.5: SHORT LEAVE APPROVALS (Next to Leave Approvals) */}
       {activeTab === "shortleave-approvals" && canApprove && canManagePolicy && (
-        <div style={{ background: "rgba(6, 182, 212, 0.06)", border: "1px solid rgba(6, 182, 212, 0.3)", borderRadius: "12px", padding: "16px 20px", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+        <div style={{ background: "rgba(6, 182, 212, 0.06)", border: "1px solid rgba(6, 182, 212, 0.3)", borderRadius: "12px", padding: "16px 20px", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
           <div>
-            <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-main, #1e293b)" }}>Short Leave Hours Limit</div>
+            <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-main, #1e293b)" }}>Short Leave Policy Limits</div>
             <div style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", marginTop: "2px" }}>
-              Employees can take a short leave of up to this many hours at a time. Current: <strong>{formatShortLimit(maxShortMins)}</strong>
+              Current Limits: <strong>{formatShortLimit(maxShortMins)}</strong> per short leave | <strong>{maxMonthlyShortCount}</strong> leave(s) per month
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <input
-              type="number"
-              min="0.5"
-              max="12"
-              step="0.5"
-              value={shortHoursInput}
-              onChange={(e) => setShortHoursInput(e.target.value)}
-              style={{ width: "90px", padding: "8px 12px", border: "1px solid var(--ui-border, #cbd5e1)", borderRadius: "6px", fontSize: "15px", fontWeight: "700", background: "var(--ui-surface, #fff)", color: "var(--text-main, #1e293b)" }}
-            />
-            <span style={{ fontSize: "13px", color: "var(--text-muted, #64748b)", fontWeight: "600" }}>Hours</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+            {/* Hours Limit Box */}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-main, #334155)" }}>Duration:</span>
+              <input
+                type="number"
+                min="0.5"
+                max="12"
+                step="0.5"
+                value={shortHoursInput}
+                onChange={(e) => setShortHoursInput(e.target.value)}
+                style={{ width: "80px", padding: "8px 10px", border: "1px solid var(--ui-border, #cbd5e1)", borderRadius: "6px", fontSize: "14px", fontWeight: "700", background: "var(--ui-surface, #fff)", color: "var(--text-main, #1e293b)" }}
+              />
+              <span style={{ fontSize: "13px", color: "var(--text-muted, #64748b)", fontWeight: "600" }}>Hours</span>
+            </div>
+
+            {/* Monthly Leave Count Limit Box */}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-main, #334155)" }}>Monthly Quota:</span>
+              <input
+                type="number"
+                min="1"
+                max="31"
+                step="1"
+                value={shortMonthlyCountInput}
+                onChange={(e) => setShortMonthlyCountInput(e.target.value)}
+                style={{ width: "80px", padding: "8px 10px", border: "1px solid var(--ui-border, #cbd5e1)", borderRadius: "6px", fontSize: "14px", fontWeight: "700", background: "var(--ui-surface, #fff)", color: "var(--text-main, #1e293b)" }}
+              />
+              <span style={{ fontSize: "13px", color: "var(--text-muted, #64748b)", fontWeight: "600" }}>Leaves/Month</span>
+            </div>
+
             <button
               type="button"
               onClick={handleSaveShortLimit}
               disabled={savingShortLimit}
-              style={{ background: "#0891b2", color: "#fff", border: "none", borderRadius: "6px", padding: "9px 16px", fontWeight: "600", fontSize: "13px", cursor: "pointer", opacity: savingShortLimit ? 0.6 : 1 }}
+              style={{ background: "#0891b2", color: "#fff", border: "none", borderRadius: "6px", padding: "9px 18px", fontWeight: "600", fontSize: "13px", cursor: "pointer", opacity: savingShortLimit ? 0.6 : 1 }}
             >
               {savingShortLimit ? "Saving..." : "Save"}
             </button>
@@ -1681,8 +2142,67 @@ export default function LeaveManagement() {
           <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--ui-border, #e2e8f0)", fontWeight: "700", color: "var(--text-main, #1e293b)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
             <span>All Employee Short Leave Requests (Approvals & Decision)</span>
 
-            {/* Start Date & End Date Filter for Short Leave */}
+            {/* Employee, Status, Start Date & End Date Filter for Short Leave */}
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              {/* Employee Filter */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", fontWeight: "600" }}>Employee:</span>
+                <select
+                  value={shortLeaveEmployeeFilter}
+                  onChange={(e) => {
+                    const newEmp = e.target.value;
+                    setShortLeaveEmployeeFilter(newEmp);
+                    // Automatically show All statuses if a specific employee is chosen
+                    if (newEmp && shortLeaveStatusFilter === "Pending") {
+                      setShortLeaveStatusFilter("All");
+                    }
+                    setAllShortLeavesPage(1);
+                  }}
+                  style={{
+                    padding: "5px 10px",
+                    fontSize: "12px",
+                    border: "1px solid var(--ui-border, #cbd5e1)",
+                    borderRadius: "6px",
+                    background: "var(--ui-surface, #fff)",
+                    color: "var(--text-main, #1e293b)"
+                  }}
+                >
+                  <option value="">All Employees</option>
+                  {staffList.map(s => (
+                    <option key={s._id || s.id} value={s.email || s._id || s.id}>
+                      {s.name || s.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", fontWeight: "600" }}>Status:</span>
+                <select
+                  value={shortLeaveStatusFilter}
+                  onChange={(e) => {
+                    setShortLeaveStatusFilter(e.target.value);
+                    setAllShortLeavesPage(1);
+                  }}
+                  style={{
+                    padding: "5px 10px",
+                    fontSize: "12px",
+                    border: "1px solid var(--ui-border, #cbd5e1)",
+                    borderRadius: "6px",
+                    background: "var(--ui-surface, #fff)",
+                    color: "var(--text-main, #1e293b)",
+                    fontWeight: "600"
+                  }}
+                >
+                  <option value="Pending">Pending</option>
+                  <option value="Approved">Approved</option>
+                  <option value="Rejected">Rejected</option>
+                  <option value="All">All Statuses</option>
+                </select>
+              </div>
+
+              {/* Date Filters */}
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", fontWeight: "600" }}>From:</span>
                 <input
@@ -1721,12 +2241,14 @@ export default function LeaveManagement() {
                   }}
                 />
               </div>
-              {(shortLeaveStartDate || shortLeaveEndDate) && (
+              {(shortLeaveStartDate || shortLeaveEndDate || shortLeaveEmployeeFilter || shortLeaveStatusFilter !== "Pending") && (
                 <button
                   type="button"
                   onClick={() => {
                     setShortLeaveStartDate("");
                     setShortLeaveEndDate("");
+                    setShortLeaveEmployeeFilter("");
+                    setShortLeaveStatusFilter("Pending");
                     setAllShortLeavesPage(1);
                   }}
                   style={{
@@ -1743,6 +2265,59 @@ export default function LeaveManagement() {
                   Clear Filter
                 </button>
               )}
+
+              {/* Download Buttons: PDF & Excel (CSV) for Short Leaves */}
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
+                <button
+                  type="button"
+                  onClick={handleExportShortLeavesPdf}
+                  title="Download Short Leave Records as PDF"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "5px 12px",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: "#dc2626",
+                    background: "#fef2f2",
+                    border: "1px solid #fecaca",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease"
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = "#fee2e2"; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = "#fef2f2"; }}
+                >
+                  <DownloadIcon size={14} color="#dc2626" />
+                  <span>PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportShortLeavesExcel}
+                  title="Download Short Leave Records as Excel / CSV"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "5px 12px",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    color: "#16a34a",
+                    background: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease"
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = "#dcfce7"; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = "#f0fdf4"; }}
+                >
+                  <DownloadIcon size={14} color="#16a34a" />
+                  <span>Excel</span>
+                </button>
+              </div>
             </div>
           </div>
           <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -1771,7 +2346,7 @@ export default function LeaveManagement() {
                         </td>
                         <td style={{ padding: "14px 16px", color: "var(--text-main, #334155)" }}>{new Date(sl.date).toLocaleDateString()}</td>
                         <td style={{ padding: "14px 16px", color: "var(--text-main, #334155)" }}>{sl.from_time} - {sl.to_time}</td>
-                        <td style={{ padding: "14px 16px", fontWeight: "700", color: "var(--text-main, #1e293b)" }}>{sl.hours} hrs</td>
+                        <td style={{ padding: "14px 16px", fontWeight: "700", color: "var(--text-main, #1e293b)" }}>{formatDuration(sl.hours)}</td>
                         <td style={{ padding: "14px 16px", color: "var(--text-muted, #475569)" }}>{sl.reason}</td>
                         <td style={{ padding: "14px 16px" }}>
                           <span style={{
@@ -1787,7 +2362,7 @@ export default function LeaveManagement() {
                             <div style={{ display: "inline-flex", gap: "8px", alignItems: "center" }}>
                               <button
                                 type="button"
-                                onClick={() => handleShortLeaveAction(sl.id, "Approved")}
+                                onClick={() => triggerShortLeaveActionConfirm(sl.id, "Approved", sl.user_name)}
                                 title="Approve Short Leave"
                                 style={{
                                   width: "32px",
@@ -1809,7 +2384,7 @@ export default function LeaveManagement() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleShortLeaveAction(sl.id, "Rejected")}
+                                onClick={() => triggerShortLeaveActionConfirm(sl.id, "Rejected", sl.user_name)}
                                 title="Reject Short Leave"
                                 style={{
                                   width: "32px",
@@ -1883,9 +2458,48 @@ export default function LeaveManagement() {
                   Define global annual leave quotas for all company employees from a single place.
                 </p>
               </div>
-              <span style={{ fontSize: "12px", background: "rgba(16, 185, 129, 0.15)", color: "#10b981", padding: "4px 10px", borderRadius: "12px", fontWeight: "700" }}>
-                Active Company Policy
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                {/* Year Type Input */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "var(--ui-bg, #f8fafc)", padding: "4px 10px", borderRadius: "8px", border: "1px solid var(--ui-border, #cbd5e1)" }}>
+                  <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--text-muted, #475569)" }}>Policy & Balance Year:</span>
+                  <input
+                    type="number"
+                    min="2020"
+                    max="2100"
+                    value={balanceYear}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setBalanceYear(val || "");
+                      if (val && val >= 2020 && val <= 2100) {
+                        fetchAllBalances(val);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!balanceYear || balanceYear < 2020) {
+                        const fallbackYr = new Date().getFullYear();
+                        setBalanceYear(fallbackYr);
+                        fetchAllBalances(fallbackYr);
+                      }
+                    }}
+                    placeholder="YYYY"
+                    style={{
+                      width: "68px",
+                      padding: "2px 6px",
+                      border: "1px solid var(--ui-border, #cbd5e1)",
+                      borderRadius: "6px",
+                      background: "var(--ui-surface, #fff)",
+                      fontSize: "13px",
+                      fontWeight: "800",
+                      color: "#4f46e5",
+                      outline: "none",
+                      textAlign: "center"
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: "12px", background: "rgba(16, 185, 129, 0.15)", color: "#10b981", padding: "4px 10px", borderRadius: "12px", fontWeight: "700" }}>
+                  Active Company Policy
+                </span>
+              </div>
             </div>
 
             <form onSubmit={handleSavePolicy}>
@@ -2007,14 +2621,13 @@ export default function LeaveManagement() {
           <div className="table-container" style={{ background: "var(--ui-surface, #ffffff)", borderRadius: "14px", border: "1px solid var(--ui-border, #e2e8f0)", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", overflow: "hidden" }}>
             <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--ui-border, #e2e8f0)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
               <div>
-                <strong style={{ fontSize: "16px", color: "var(--text-main, #1e293b)" }}>Current Staff Leave Overview</strong>
+                <strong style={{ fontSize: "16px", color: "var(--text-main, #1e293b)" }}>
+                  Current Staff Leave Overview ({balanceYear})
+                </strong>
                 <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--text-muted, #64748b)" }}>
-                  Employee leave balances allocated via company policy. Deducted automatically upon approved leaves.
+                  Employee leave balances allocated for {balanceYear}. Deducted automatically upon approved leaves.
                 </p>
               </div>
-              <span className="mobile-scroll-hint" style={{ fontSize: "11px", color: "var(--primary-color, #4f46e5)", fontWeight: "600", background: "rgba(79, 70, 229, 0.12)", padding: "3px 8px", borderRadius: "6px" }}>
-                ⇄ Swipe table to view all quotas
-              </span>
             </div>
 
             <div style={{ width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -2449,6 +3062,17 @@ export default function LeaveManagement() {
         confirmColor="#dc2626"
         onConfirm={handleDeleteShortLeave}
         onClose={() => setDeleteShortConfirm({ show: false, id: null })}
+      />
+
+      {/* APPROVE / REJECT CONFIRMATION MODAL */}
+      <ConfirmModal
+        show={actionConfirm.show}
+        title={actionConfirm.action === "Approved" ? "Confirm Approval" : "Confirm Rejection"}
+        message={`Are you sure you want to ${actionConfirm.action === "Approved" ? "approve" : "reject"} this ${actionConfirm.type === "shortleave" ? "short leave" : "leave"} request for ${actionConfirm.userName}?`}
+        confirmText={actionConfirm.action === "Approved" ? "Yes, Approve" : "Yes, Reject"}
+        confirmColor={actionConfirm.action === "Approved" ? "#16a34a" : "#dc2626"}
+        onConfirm={handleConfirmAction}
+        onClose={() => setActionConfirm(prev => ({ ...prev, show: false }))}
       />
     </div>
   );

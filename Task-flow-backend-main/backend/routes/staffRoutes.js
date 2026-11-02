@@ -5,12 +5,11 @@ const { pool, logAudit } = require("../config/mysqlDb");
 const { generatePassword, sendMail } = require("../config/mail");
 const { checkPermission } = require("../middleware/permissions");
 const authMiddleware = require("../middleware/auth");
-const { checkPlanLimit } = require("../middleware/subscriptionLimits");
 const staffController = require("../controllers/staffController");
 const companyController = require("../controllers/companyController");
 const upload = require("../middleware/upload");
 
-// GET celebrations (Today & upcoming 14 days birthdays and work anniversaries)
+// GET celebrations (Today & upcoming 10 days birthdays and work anniversaries)
 router.get("/celebrations", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -55,7 +54,7 @@ router.get("/celebrations", authMiddleware, async (req, res) => {
           });
         } else {
           const daysLeft = getDaysUntil(m, day);
-          if (daysLeft > 0 && daysLeft <= 14) {
+          if (daysLeft > 0 && daysLeft <= 10) {
             upcomingBirthdays.push({
               id: s.id,
               name: s.name,
@@ -90,7 +89,7 @@ router.get("/celebrations", authMiddleware, async (req, res) => {
             });
           } else {
             const daysLeft = getDaysUntil(m, day);
-            if (daysLeft > 0 && daysLeft <= 14) {
+            if (daysLeft > 0 && daysLeft <= 10) {
               upcomingAnniversaries.push({
                 id: s.id,
                 name: s.name,
@@ -179,7 +178,7 @@ router.get("/", authMiddleware, async (req, res) => {
 
 
 // ADD staff
-router.post("/", authMiddleware, checkPermission("staff_management", "create"), checkPlanLimit("staff"), async (req, res) => {
+router.post("/", authMiddleware, checkPermission("staff_management", "create"),async (req, res) => {
   try {
     const { name, email, phone, status, role, position, password } = req.body;
     
@@ -234,10 +233,17 @@ router.post("/", authMiddleware, checkPermission("staff_management", "create"), 
     const id = `staff_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const roleVal = role || "Developer";
 
+    // Default position to the role's name (not its id) when none is given
+    let positionVal = position ? String(position).trim() : "";
+    if (!positionVal) {
+      const [roleRows] = await pool.query("SELECT name FROM roles WHERE id = ? OR name = ? LIMIT 1", [roleVal, roleVal]);
+      positionVal = roleRows.length > 0 ? roleRows[0].name : "";
+    }
+
     await pool.query(
       `INSERT INTO staff (id, name, email, password, role, position, status, phone)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, trimmedName, cleanEmail, hashedPassword, roleVal, position || roleVal, status || "Active", phone ? String(phone).trim() : ""]
+      [id, trimmedName, cleanEmail, hashedPassword, roleVal, positionVal, status || "Active", phone ? String(phone).trim() : ""]
     );
 
     // Auto leave balance
@@ -265,9 +271,8 @@ router.post("/", authMiddleware, checkPermission("staff_management", "create"), 
       email: cleanEmail,
       phone: phone ? String(phone).trim() : "",
       role: { name: roleVal },
-      position: position || roleVal,
-      status: status || "Active",
-      tempPassword: plainPassword
+      position: positionVal,
+      status: status || "Active"
     });
   } catch (err) {
     if (err.code === "ER_DUP_ENTRY") {
@@ -276,6 +281,9 @@ router.post("/", authMiddleware, checkPermission("staff_management", "create"), 
     res.status(500).json({ error: err.message });
   }
 });
+
+// CHANGE PASSWORD (No permission required - any authenticated staff can change their own password)
+router.put("/change-password", authMiddleware, staffController.changePassword);
 
 // UPDATE
 router.put("/:id", authMiddleware, checkPermission("staff_management", "update"), async (req, res) => {
@@ -348,6 +356,7 @@ router.put("/:id", authMiddleware, checkPermission("staff_management", "update")
     }
 
     const [rows] = await pool.query("SELECT id as _id, id, name, email, phone, status, role, position FROM staff WHERE id = ?", [targetId]);
+    if (rows.length === 0) return res.status(404).json({ error: "Staff not found" });
     res.json(rows[0]);
   } catch (err) {
     if (err.code === "ER_DUP_ENTRY") {
@@ -363,6 +372,7 @@ router.delete("/:id", authMiddleware, checkPermission("staff_management", "delet
     const targetId = req.params.id;
     // Check if employee is superadmin
     const [staffRow] = await pool.query("SELECT role, email, name FROM staff WHERE id = ? LIMIT 1", [targetId]);
+    if (staffRow.length === 0) return res.status(404).json({ error: "Staff not found" });
     if (staffRow.length > 0 && (staffRow[0].role === "role_superadmin" || staffRow[0].email === "gadanipranav@gmail.com")) {
       return res.status(403).json({ error: "Super Admin accounts cannot be deleted" });
     }
@@ -479,7 +489,6 @@ router.put("/:id/extended-profile", authMiddleware, async (req, res) => {
 // PROFILE ROUTES
 router.get("/me", authMiddleware, staffController.getProfile);
 router.put("/me", authMiddleware, staffController.updateProfile);
-router.put("/change-password", authMiddleware, staffController.changePassword);
 
 // COMPANY SETTINGS ROUTES
 router.get("/company/settings", authMiddleware, companyController.getSettings);

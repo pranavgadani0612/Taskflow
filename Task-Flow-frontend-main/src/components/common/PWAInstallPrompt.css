@@ -7,7 +7,8 @@
   position: fixed;
   bottom: 24px;
   left: 50%;
-  transform: translateX(-50%);
+  /* `translate` (not `transform`) so the slide-up animation doesn't undo the centering */
+  translate: -50% 0;
   z-index: 900;
   display: flex;
   align-items: center;
@@ -302,10 +303,13 @@ body.modal-open .pwa-install-banner {
 @media (max-width: 480px) {
   .pwa-install-banner {
     bottom: 12px;
+    left: 12px;
+    right: 12px;
+    translate: none;
     padding: 6px 12px;
     gap: 10px;
-    min-width: 290px;
-    max-width: 94vw;
+    min-width: 0;
+    max-width: none;
     border-radius: 12px;
   }
   .pwa-app-icon-wrapper {

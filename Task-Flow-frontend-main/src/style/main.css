@@ -1354,8 +1354,28 @@ body {
   }
 
   /* Form & Modal controls */
-  .form-row, .modal-content, [style*="gridTemplateColumns"] {
+  .form-row, .modal-content, [style*="grid-template-columns"] {
     max-width: 100% !important;
     box-sizing: border-box !important;
+  }
+}
+
+/* Phones: stack fixed-column inline grids (form rows, modals, split panels).
+   React serializes inline styles in kebab-case, so match "grid-template-columns". */
+@media (max-width: 640px) {
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns: 1fr 300px"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  [style*="grid-template-columns: 1fr 300px"] {
+    gap: 24px !important;
+  }
+
+  /* FormModal sets overflow: visible inline; on short screens long forms
+     would spill under the footer, so scroll the body instead */
+  .modal-body {
+    overflow-y: auto !important;
+    max-height: calc(100dvh - 180px);
   }
 }

@@ -4,7 +4,6 @@ const router = express.Router();
 const projectController = require("../controllers/projectController");
 const { checkPermission } = require("../middleware/permissions");
 const authMiddleware = require("../middleware/auth");
-const { checkPlanLimit } = require("../middleware/subscriptionLimits");
 
 // GET ALL
 router.get("/", authMiddleware, projectController.getProjects);
@@ -13,7 +12,7 @@ router.get("/", authMiddleware, projectController.getProjects);
 router.get("/:id", authMiddleware, checkPermission("project_management", "read"), projectController.getProject);
 
 // CREATE
-router.post("/", authMiddleware, checkPermission("project_management", "create"), checkPlanLimit("project"), projectController.createProject);
+router.post("/", authMiddleware, checkPermission("project_management", "create"),projectController.createProject);
 
 // UPDATE
 router.put("/:id", authMiddleware, checkPermission("project_management", "update"), projectController.updateProject);

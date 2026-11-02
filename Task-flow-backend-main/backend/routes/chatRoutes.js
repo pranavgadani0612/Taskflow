@@ -327,6 +327,21 @@ router.post("/conversations/:id/messages", authMiddleware, async (req, res) => {
     const userName = req.user.name || "User";
     const userImage = req.user.image || "";
 
+    if ((!text || !String(text).trim()) && !fileUrl) {
+      return res.status(400).json({ message: "Message text is required", error: "Message text is required" });
+    }
+
+    const [convCheck] = await pool.query("SELECT participants, client_participants FROM chat_conversations WHERE id = ?", [convId]);
+    if (convCheck.length === 0) {
+      return res.status(404).json({ message: "Conversation not found", error: "Conversation not found" });
+    }
+    const memberIds = safeJson(convCheck[0].participants, []).map((p) => String(p));
+    const clientEmails = safeJson(convCheck[0].client_participants, []).map((c) => (c && c.email ? String(c.email).toLowerCase() : ""));
+    const userEmail = (req.user.email || "").toLowerCase();
+    if (!memberIds.includes(userId) && !(userEmail && clientEmails.includes(userEmail))) {
+      return res.status(403).json({ message: "You are not a participant of this conversation", error: "You are not a participant of this conversation" });
+    }
+
     const id = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const readBy = JSON.stringify([userId]);
 

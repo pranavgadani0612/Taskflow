@@ -28,7 +28,6 @@ const permissionRoutes = require("./routes/permissionRoutes");
 const projectRoutes = require("./routes/projectRoutes");
 const documentRoutes = require("./routes/documentRoutes");
 const companyRoutes = require("./routes/companyRoutes");
-const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const clientRoutes = require("./routes/clientRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
@@ -79,9 +78,19 @@ io.on("connection", (socket) => {
   socket.on("send_message", async (data) => {
     try {
       const { conversationId, text, senderId, senderName, senderImage } = data;
-      if (!conversationId || !text || !senderId) return;
+      if (!conversationId || !text || !String(text).trim() || !senderId) return;
 
       const { pool } = require("./config/mysqlDb");
+
+      // NOTE: sockets are not authenticated, so senderId is client-supplied.
+      // At minimum, require the conversation to exist and senderId to be one of its participants.
+      const [convCheck] = await pool.query("SELECT participants FROM chat_conversations WHERE id = ?", [conversationId]);
+      if (convCheck.length === 0) return;
+      let members = [];
+      try {
+        members = typeof convCheck[0].participants === "string" ? JSON.parse(convCheck[0].participants) : (convCheck[0].participants || []);
+      } catch (e) {}
+      if (!members.map(String).includes(String(senderId))) return;
       const msgId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
       const readBy = JSON.stringify([senderId]);
 
@@ -194,7 +203,7 @@ app.use(cookieParser());
 app.use(express.json());
 
 // Static uploads
-app.use("/uploads", express.static("uploads"));
+app.use("/uploads", express.static(require("./config/uploadDir")));
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -206,7 +215,6 @@ app.use("/api/roles", roleRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/documents", documentRoutes);
 app.use("/api/companies", companyRoutes);
-app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/clients", clientRoutes);
 app.use("/api/attendance", attendanceRoutes);
@@ -229,7 +237,6 @@ app.use("/api/audit-logs", require("./routes/auditRoutes"));
 // Phase 2 Routes
 app.use("/api/assets", require("./routes/assetRoutes"));
 app.use("/api/payroll", require("./routes/payrollRoutes"));
-app.use("/api/allocations", require("./routes/allocationRoutes"));
 app.use("/api/client-reports", require("./routes/clientReportRoutes"));
 app.use("/api/overtime", require("./routes/overtimeRoutes"));
 

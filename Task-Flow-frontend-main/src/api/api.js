@@ -55,11 +55,6 @@ API.interceptors.response.use(
         window.location.href = "/login";
       }
     }
-    if (error?.response?.status === 403 && data?.limitReached) {
-      error.planLimitError = true;
-      error.planLimitMessage = data.message || "Plan limit reached. Please upgrade your subscription.";
-      error.planName = data.planName;
-    }
     return Promise.reject(error);
   }
 );

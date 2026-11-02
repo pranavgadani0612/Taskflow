@@ -332,7 +332,7 @@ export default function Expenses() {
   const handleFormSubmit = async (asDraft = false) => {
     setFieldErrors({});
     if (!asDraft) {
-      if (!formData.claimTitle || !formData.claimTitle.trim()) {
+      if (!formData.title || !formData.title.trim()) {
         showToast("Claim Title is required", "error");
         return;
       }

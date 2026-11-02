@@ -151,19 +151,6 @@ export default function Sidebar({ mobileOpen, closeMobile }) {
       )
     },
     {
-      name: "Resource Utilization",
-      path: "/resource-allocation",
-      permission: "resource_management",
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </svg>
-      )
-    },
-    {
       name: "Client Invoicing & Reports",
       path: "/client-reports",
       permission: "client_reports",
@@ -174,6 +161,18 @@ export default function Sidebar({ mobileOpen, closeMobile }) {
           <line x1="16" y1="13" x2="8" y2="13" />
           <line x1="16" y1="17" x2="8" y2="17" />
           <polyline points="10 9 9 9 8 9" />
+        </svg>
+      )
+    },
+    {
+      name: "Project Report",
+      path: "/project-report",
+      superAdminOnly: true,
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10" />
+          <line x1="12" y1="20" x2="12" y2="4" />
+          <line x1="6" y1="20" x2="6" y2="14" />
         </svg>
       )
     },
@@ -227,6 +226,8 @@ export default function Sidebar({ mobileOpen, closeMobile }) {
 
       <div className="sidebar-menu">
         {menuItems.map(item => {
+          if (item.superAdminOnly && !isSuperAdmin) return null;
+
           // Check parent permission OR any child permission
           const hasParentPerm = item.permission ? (isSuperAdmin || hasPermission(item.permission, "read")) : false;
           const hasAnyChildPerm = item.subItems?.some(sub => isSuperAdmin || hasPermission(sub.permission, "read")) || false;

@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useSocket } from "../../contexts/SocketContext";
 import API from "../../api/api";
+import { formatDuration } from "../../utils/formatDuration";
+import { buildEarlyClockOutMessage } from "../../utils/clockOutMessage";
 import {
   UsersIcon,
   FolderIcon,
@@ -108,14 +110,8 @@ export default function ProjectManagerDashboard() {
     try {
       setAttLoading(true);
       const res = await API.get("/attendance/today");
-      const rem = res.data?.remainingShiftMinutes || 0;
-      let msg = "Are you sure you want to end your shift for today? Your total hours and timesheet records will be saved.";
-      if (rem > 0) {
-        const h = Math.floor(rem / 60);
-        const m = Math.round(rem % 60);
-        const timeStr = h > 0 ? `${h} hrs ${m} mins` : `${m} mins`;
-        msg = `You still have ${timeStr} left in your shift. If you Clock Out now, it will be counted as a Half Day / Leave. Are you sure you want to Clock Out?`;
-      }
+      const msg = buildEarlyClockOutMessage(res.data)
+        || "Are you sure you want to end your shift for today? Your total hours and timesheet records will be saved.";
       setClockOutConfirmMsg(msg);
       setShowConfirmClockOut(true);
     } catch (err) {
@@ -215,16 +211,7 @@ export default function ProjectManagerDashboard() {
       updateTimer();
       interval = setInterval(updateTimer, 1000);
     } else if (attendance?.clock_out && attendance?.total_hours !== undefined && attendance?.total_hours !== null) {
-      const totalMins = Math.round(Number(attendance.total_hours) * 60);
-      const h = Math.floor(totalMins / 60);
-      const m = totalMins % 60;
-      if (h === 0) {
-        setElapsedTime(`${m} mins`);
-      } else if (m === 0) {
-        setElapsedTime(`${h} hrs`);
-      } else {
-        setElapsedTime(`${h} hrs ${m} mins`);
-      }
+      setElapsedTime(formatDuration(attendance.total_hours));
     } else {
       setElapsedTime("00:00:00");
     }
@@ -453,7 +440,7 @@ export default function ProjectManagerDashboard() {
                   "You haven't clocked in yet for today. Start your shift below."
                 )}
                 {attendance?.clock_out && (
-                  <> • Clocked Out at <strong style={{ color: "#ef4444" }}>{new Date(attendance.clock_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> ({attendance.total_hours} hrs)</>
+                  <> • Clocked Out at <strong style={{ color: "#ef4444" }}>{new Date(attendance.clock_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> ({formatDuration(attendance.total_hours)})</>
                 )}
               </p>
             </div>
@@ -486,7 +473,7 @@ export default function ProjectManagerDashboard() {
                       color: "#38bdf8",
                       border: "1px solid rgba(56, 189, 248, 0.3)"
                     }}>
-                      Shift: {scheduleInfo.timing} ({scheduleInfo.standardShiftHours}h)
+                      Shift: {scheduleInfo.timing} ({formatDuration(scheduleInfo.standardShiftHours)})
                     </span>
                   )}
                   {lateInstances && (
@@ -613,7 +600,7 @@ export default function ProjectManagerDashboard() {
               alignItems: "center",
               gap: "6px"
             }}>
-              <CheckIcon size={15} color="#10b981" /> Shift Completed ({attendance.total_hours} hrs)
+              <CheckIcon size={15} color="#10b981" /> Shift Completed ({formatDuration(attendance.total_hours)})
             </span>
           )}
         </div>
@@ -674,7 +661,7 @@ export default function ProjectManagerDashboard() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
           gap: "24px",
           marginBottom: "32px",
         }}

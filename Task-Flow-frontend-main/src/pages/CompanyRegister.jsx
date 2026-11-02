@@ -110,7 +110,7 @@ export default function CompanyRegister() {
             if (res.data.token) localStorage.setItem("token", res.data.token);
             if (res.data.staff) login(res.data.staff);
             showToast("Registration Successful!");
-            navigate("/profile?tab=subscription&new=1");
+            navigate("/profile");
         } catch (err) {
             const errMsg = err.response?.data?.error || err.response?.data?.message || err.message || "Registration failed";
             if (errMsg.toLowerCase().includes("company name")) {

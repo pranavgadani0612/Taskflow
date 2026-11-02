@@ -18,7 +18,6 @@ import ResetPassword from "./pages/ResetPassword";
 import CompanyRegister from "./pages/CompanyRegister";
 import ForgotPassword from "./pages/ForgotPassword";
 import CompanyList from "./pages/CompanyList";
-import Subscription from "./pages/Subscription";
 import Profile from "./pages/Profile";
 import Chat from "./pages/Chat";
 import Client from "./pages/Client";
@@ -38,8 +37,8 @@ import EmployeeDirectory from "./pages/EmployeeDirectory";
 import AuditLogs from "./pages/AuditLogs";
 import Assets from "./pages/Assets";
 import Payroll from "./pages/Payroll";
-import ResourceAllocation from "./pages/ResourceAllocation";
 import ClientInvoicing from "./pages/ClientInvoicing";
+import ProjectReport from "./pages/ProjectReport";
 
 import { CompanyProvider } from "./contexts/CompanyContext";
 import PWAInstallPrompt from "./components/common/PWAInstallPrompt";
@@ -120,8 +119,8 @@ function AppRoutes() {
         <Route path="audit-logs" element={hasPermission("audit_logs", "read") ? <AuditLogs /> : <Navigate to="/" />} />
         <Route path="assets" element={hasPermission("asset_management", "read") ? <Assets /> : <Navigate to="/" />} />
         <Route path="payroll" element={hasPermission("payroll_management", "read") ? <Payroll /> : <Navigate to="/" />} />
-        <Route path="resource-allocation" element={hasPermission("resource_management", "read") ? <ResourceAllocation /> : <Navigate to="/" />} />
         <Route path="client-reports" element={hasPermission("client_reports", "read") ? <ClientInvoicing /> : <Navigate to="/" />} />
+        <Route path="project-report" element={isSuperAdmin ? <ProjectReport /> : <Navigate to="/" />} />
         <Route path="profile" element={<Profile />} />
 
         <Route path="policies" element={<Navigate to="/profile?tab=policies" replace />} />

@@ -8,6 +8,13 @@ const isUserSuperAdmin = (req) => {
   return req.user?.email === superEmail || req.user?.role?.name === "Super Admin" || req.user?.role === "Super Admin" || req.user?.role?.name === "Company Owner";
 };
 
+// YYYY-MM-DD and a real calendar date (rejects 2026-02-30, not-a-date, ...)
+const isValidDate = (str) => {
+  if (typeof str !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+  const d = new Date(`${str}T00:00:00Z`);
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === str;
+};
+
 const getCompanyId = (req) => req.user?.companyId?._id || req.user?.companyId?.id || req.user?.company_id || (typeof req.user?.companyId === 'string' ? req.user.companyId : 'default_company');
 
 // 1. GET ALL COMPANY HOLIDAYS
@@ -90,6 +97,17 @@ router.post("/", authMiddleware, async (req, res) => {
     if (!holiday_date) {
       return res.status(400).json({ error: "Plese enter holiday date", field: "holiday_date" });
     }
+    if (!isValidDate(holiday_date)) {
+      return res.status(400).json({ error: "Please enter a valid date", field: "holiday_date" });
+    }
+
+    const [dup] = await pool.query(
+      "SELECT name FROM company_holidays WHERE holiday_date = ? AND (company_id = ? OR company_id = 'default_company') LIMIT 1",
+      [holiday_date, companyId]
+    );
+    if (dup.length) {
+      return res.status(409).json({ error: `A holiday (${dup[0].name}) already exists on this date`, field: "holiday_date" });
+    }
 
     const id = `hol_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
@@ -131,6 +149,22 @@ router.put("/:id", authMiddleware, async (req, res) => {
     }
     if (!holiday_date) {
       return res.status(400).json({ error: "Plese enter holiday date", field: "holiday_date" });
+    }
+    if (!isValidDate(holiday_date)) {
+      return res.status(400).json({ error: "Please enter a valid date", field: "holiday_date" });
+    }
+
+    const [existing] = await pool.query("SELECT * FROM company_holidays WHERE id = ?", [req.params.id]);
+    if (!existing.length) {
+      return res.status(404).json({ error: "Holiday not found." });
+    }
+
+    const [dup] = await pool.query(
+      "SELECT name FROM company_holidays WHERE holiday_date = ? AND id != ? AND (company_id = ? OR company_id = 'default_company') LIMIT 1",
+      [holiday_date, req.params.id, existing[0].company_id]
+    );
+    if (dup.length) {
+      return res.status(409).json({ error: `A holiday (${dup[0].name}) already exists on this date`, field: "holiday_date" });
     }
 
     await pool.query(

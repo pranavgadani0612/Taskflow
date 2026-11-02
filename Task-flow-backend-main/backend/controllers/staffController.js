@@ -73,42 +73,35 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// PUT change current user password (verifies old password)
+// PUT change current user password
 exports.changePassword = async (req, res) => {
   try {
     const userId = req.user._id || req.user.id;
-    const { oldPassword, newPassword } = req.body;
+    const userEmail = req.user.email;
+    const { newPassword } = req.body;
 
-    if (!oldPassword) {
-      return res.status(400).json({ error: "Plese enter current password" });
-    }
     if (!newPassword) {
-      return res.status(400).json({ error: "Plese enter new password" });
+      return res.status(400).json({ error: "Please enter new password" });
     }
 
     if (newPassword.length < 6) {
       return res.status(400).json({ error: "New password must be at least 6 characters" });
     }
 
-    if (oldPassword === newPassword) {
-      return res.status(400).json({ error: "New password cannot be the same as old password" });
-    }
-
-    const [rows] = await pool.query("SELECT password FROM staff WHERE id = ? LIMIT 1", [userId]);
+    const [rows] = await pool.query(
+      "SELECT id FROM staff WHERE id = ? OR (email = ? AND email IS NOT NULL AND email != '') LIMIT 1",
+      [userId, userEmail || ""]
+    );
     if (!rows || rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const isMatch = await bcrypt.compare(oldPassword, rows[0].password);
-    if (!isMatch) {
-      return res.status(400).json({ error: "Incorrect current password" });
-    }
-
+    const targetStaffId = rows[0].id;
     const salt = await bcrypt.genSalt(10);
     const hash = await bcrypt.hash(newPassword, salt);
-    await pool.query("UPDATE staff SET password = ? WHERE id = ?", [hash, userId]);
+    await pool.query("UPDATE staff SET password = ? WHERE id = ?", [hash, targetStaffId]);
 
-    res.json({ message: "Password changed successfully" });
+    res.json({ message: "Password updated successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

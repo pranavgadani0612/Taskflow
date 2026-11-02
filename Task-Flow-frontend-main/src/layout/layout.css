@@ -290,7 +290,8 @@
     background: #ffffff !important;
     transform: translateX(-100%);
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 10px 0 35px rgba(0, 0, 0, 0.3);
+    /* No shadow while hidden off-canvas, otherwise it bleeds in along the left edge */
+    box-shadow: none;
     width: 280px;
     border-right: 1px solid var(--ui-border, #e2e8f0);
   }
@@ -302,6 +303,7 @@
 
   .sidebar.mobile-open {
     transform: translateX(0);
+    box-shadow: 10px 0 35px rgba(0, 0, 0, 0.3);
   }
 
   .content-area {

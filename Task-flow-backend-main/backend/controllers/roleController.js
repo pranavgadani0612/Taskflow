@@ -12,10 +12,15 @@ exports.createRole = async (req, res) => {
     const permissions = JSON.stringify(req.body.permissions || []);
     const companyId = req.body.companyId || req.user?.companyId?._id || req.user?.companyId || null;
 
+    // Prevent duplicate role names (case-insensitive) instead of silently overwriting
+    const [dup] = await pool.query("SELECT id FROM roles WHERE LOWER(name) = ? LIMIT 1", [name.toLowerCase()]);
+    if (dup.length > 0) {
+      return res.status(409).json({ error: "Role name already exists", field: "name" });
+    }
+
     await pool.query(
-      `INSERT INTO roles (id, name, status, permissions, company_id) 
-       VALUES (?, ?, ?, ?, ?) 
-       ON DUPLICATE KEY UPDATE status = VALUES(status), permissions = VALUES(permissions)`,
+      `INSERT INTO roles (id, name, status, permissions, company_id)
+       VALUES (?, ?, ?, ?, ?)`,
       [id, name, status, permissions, companyId]
     );
 
@@ -40,6 +45,9 @@ exports.createRole = async (req, res) => {
       permissions: typeof role.permissions === "string" ? JSON.parse(role.permissions) : role.permissions
     });
   } catch (err) {
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Role name already exists", field: "name" });
+    }
     res.status(500).json({ error: err.message });
   }
 };
@@ -82,15 +90,23 @@ exports.updateRole = async (req, res) => {
 
     const [existing] = await pool.query("SELECT * FROM roles WHERE id = ?", [roleId]);
     if (!existing || existing.length === 0) {
-      return res.status(404).json({ msg: "Role not found" });
+      return res.status(404).json({ error: "Role not found", msg: "Role not found" });
     }
 
     const updatedName = name !== undefined ? name.trim() : existing[0].name;
     if (!updatedName) {
       return res.status(400).json({ error: "Plese enter role name", msg: "Plese enter role name" });
     }
+    const [dup] = await pool.query("SELECT id FROM roles WHERE LOWER(name) = ? AND id != ? LIMIT 1", [updatedName.toLowerCase(), roleId]);
+    if (dup.length > 0) {
+      return res.status(409).json({ error: "Role name already exists", field: "name" });
+    }
     const updatedStatus = status !== undefined ? status : existing[0].status;
-    const updatedPerms = permissions !== undefined ? JSON.stringify(permissions) : existing[0].permissions;
+    // Existing permissions come back parsed from the JSON column, so re-stringify them
+    const existingPerms = existing[0].permissions;
+    const updatedPerms = permissions !== undefined
+      ? JSON.stringify(permissions)
+      : (typeof existingPerms === "string" ? existingPerms : JSON.stringify(existingPerms || []));
 
     await pool.query(
       "UPDATE roles SET name = ?, status = ?, permissions = ? WHERE id = ?",
@@ -125,6 +141,9 @@ exports.updateRole = async (req, res) => {
 exports.deleteRole = async (req, res) => {
   try {
     const [existing] = await pool.query("SELECT * FROM roles WHERE id = ?", [req.params.id]);
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ error: "Role not found", msg: "Role not found" });
+    }
     await pool.query("DELETE FROM roles WHERE id = ?", [req.params.id]);
 
     if (existing && existing[0]) {

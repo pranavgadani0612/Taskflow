@@ -389,6 +389,75 @@ const sendExpenseMail = async ({ to, recipientName, title, action, amount, curre
   }
 };
 
+// Leave Request Decision Email (Approved / Rejected)
+const sendLeaveDecisionMail = async ({
+  to,
+  recipientName,
+  leaveType,
+  fromDate,
+  toDate,
+  totalDays,
+  dayType,
+  action, // 'Approved' | 'Rejected'
+  approvedBy,
+  rejectionReason,
+  isShortLeave = false,
+  shortLeaveTime = ""
+}) => {
+  try {
+    if (!to) return;
+    const transporter = createTransporter();
+    const appLink = process.env.APP_URL || "";
+
+    const isApproved = action === "Approved";
+    const badgeColor = isApproved ? "#16a34a" : "#dc2626";
+    const statusText = isApproved
+      ? `${isShortLeave ? "Short Leave" : "Leave"} Request Approved`
+      : `${isShortLeave ? "Short Leave" : "Leave"} Request Rejected`;
+
+    const content = `
+      <div style="margin-bottom: 20px;">
+        <h2 style="color: #0f172a; margin: 0 0 6px 0; font-size: 22px; font-weight: 800;">${statusText}</h2>
+        <p style="margin: 0; color: #64748b; font-size: 14px;">Leave management and attendance notification</p>
+      </div>
+
+      <p style="font-size: 15px; color: #1e293b;">Hello <strong>${recipientName || "Team Member"}</strong>,</p>
+      <p style="color: #475569;">Your leave application has been reviewed by the management. Here are the details:</p>
+      
+      <div style="background-color: #f8fafc; border-left: 4px solid ${badgeColor}; padding: 18px 22px; border-radius: 6px; margin: 20px 0; border: 1px solid #e2e8f0; border-left-width: 4px;">
+        <p style="margin: 4px 0; font-size: 14px;"><strong>Status:</strong> <span style="display:inline-block; padding: 3px 10px; border-radius: 4px; background-color: ${badgeColor}; color: #fff; font-weight:700; font-size:12px;">${action}</span></p>
+        <p style="margin: 6px 0 4px 0; font-size: 14px;"><strong>Type:</strong> ${leaveType || (isShortLeave ? "Short Leave" : "Leave")}</p>
+        ${isShortLeave ? `
+          <p style="margin: 6px 0 4px 0; font-size: 14px;"><strong>Date:</strong> ${fromDate}</p>
+          <p style="margin: 6px 0 4px 0; font-size: 14px;"><strong>Time:</strong> ${shortLeaveTime}</p>
+          <p style="margin: 6px 0 4px 0; font-size: 14px;"><strong>Duration:</strong> ${totalDays} hr(s)</p>
+        ` : `
+          <p style="margin: 6px 0 4px 0; font-size: 14px;"><strong>From Date:</strong> ${fromDate}</p>
+          <p style="margin: 6px 0 4px 0; font-size: 14px;"><strong>To Date:</strong> ${toDate}</p>
+          <p style="margin: 6px 0 4px 0; font-size: 14px;"><strong>Total Days:</strong> ${totalDays} ${dayType && dayType !== "Full Day" ? `(${dayType})` : ""}</p>
+        `}
+        <p style="margin: 6px 0 4px 0; font-size: 14px;"><strong>Reviewed By:</strong> ${approvedBy || "Administrator"}</p>
+        ${!isApproved && rejectionReason ? `<p style="margin: 8px 0 4px 0; font-size: 14px; color: #b91c1c;"><strong>Reason for Rejection:</strong> ${rejectionReason}</p>` : ""}
+      </div>
+
+      ${appLink ? `
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${appLink}/leave" style="background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%); color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px; display: inline-block;">View in Portal</a>
+      </div>` : ""}
+    `;
+
+    await transporter.sendMail({
+      from: `"Padhya Software Technologies" <${process.env.EMAIL_USER}>`,
+      to,
+      subject: `Padhya Software Technologies | Leave Request [${action}]`,
+      html: getEmailLayout(content, "Leave Update"),
+    });
+    console.log(`✅ Leave email [${action}] sent to:`, to);
+  } catch (error) {
+    console.warn("⚠️ Leave email notification error:", error.message);
+  }
+};
+
 module.exports = {
   generatePassword,
   sendMail,
@@ -397,5 +466,6 @@ module.exports = {
   sendDocumentMail,
   sendAccessRequestMail,
   sendResetPasswordMail,
-  sendExpenseMail
+  sendExpenseMail,
+  sendLeaveDecisionMail
 };

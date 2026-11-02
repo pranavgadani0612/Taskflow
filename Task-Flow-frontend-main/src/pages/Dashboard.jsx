@@ -8,6 +8,8 @@ import { ClockIcon, PlayIcon, CoffeeIcon, StopIcon, CheckIcon } from "../compone
 import AlertModal from "../components/common/AlertModal";
 import ConfirmModal from "../components/common/ConfirmModal";
 import API from "../api/api";
+import { formatDuration } from "../utils/formatDuration";
+import { buildEarlyClockOutMessage } from "../utils/clockOutMessage";
 import "../style/main.css";
 import EmployeeDashboard from "./dashboards/EmployeeDashboard";
 import SuperAdminDashboard from "./dashboards/SuperAdminDashboard";
@@ -126,15 +128,8 @@ export default function Dashboard() {
       const rem = res.data?.remainingShiftMinutes || 0;
       setRemainingShiftMinutes(rem);
       
-      let msg = "Are you sure you want to Clock Out for today?";
-      if (rem > 0) {
-        const h = Math.floor(rem / 60);
-        const m = Math.round(rem % 60);
-        const timeStr = h > 0 ? `${h} hrs ${m} mins` : `${m} mins`;
-        msg = `You still have ${timeStr} left in your shift. If you Clock Out now, it will be counted as a Half Day / Leave. Are you sure you want to Clock Out?`;
-      } else {
-        msg = "Are you sure you want to Clock Out for today? Make sure your daily tasks and timesheet are complete.";
-      }
+      const msg = buildEarlyClockOutMessage(res.data)
+        || "Are you sure you want to Clock Out for today? Make sure your daily tasks and timesheet are complete.";
       setClockOutConfirmMsg(msg);
       setShowConfirmClockOut(true);
     } catch (err) {
@@ -160,7 +155,7 @@ export default function Dashboard() {
         const m = Math.round(remMins % 60);
         const timeStr = h > 0 ? `${h}h ${m}m` : `${m} minutes`;
         showAlert(
-          `You have clocked out early today. Remaining shift time was ${timeStr}. Your total worked time is ${res.data.totalHours || "0"} hrs.`,
+          `You have clocked out early today. Remaining shift time was ${timeStr}. Your total worked time is ${formatDuration(res.data.totalHours)}.`,
           "Shift Notice",
           "info"
         );
@@ -176,13 +171,8 @@ export default function Dashboard() {
 
   // Helper: Format decimal hours to readable "X hrs Y mins" or "X mins"
   const formatTotalHours = (val) => {
-    if (val === null || val === undefined || val === "" || isNaN(val)) return "0 mins";
-    const totalMins = Math.round(Number(val) * 60);
-    const h = Math.floor(totalMins / 60);
-    const m = totalMins % 60;
-    if (h === 0) return `${m} mins`;
-    if (m === 0) return `${h} hrs`;
-    return `${h} hrs ${m} mins`;
+    if (val === null || val === undefined || val === "" || isNaN(val)) return formatDuration(0);
+    return formatDuration(val);
   };
 
   const handleBreakToggle = () => {
@@ -751,7 +741,7 @@ export default function Dashboard() {
         />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '28px', marginBottom: '40px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: '28px', marginBottom: '40px' }}>
           {/* TASK DISTRIBUTION HUD */}
           <div style={{
             background: "var(--ui-surface)",
@@ -834,7 +824,7 @@ export default function Dashboard() {
           </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: '28px' }}>
           {/* DIGITAL ACTIVITY PULSE - CUSTOM SVG GRAPH */}
           <div style={{
             background: "var(--ui-surface)",

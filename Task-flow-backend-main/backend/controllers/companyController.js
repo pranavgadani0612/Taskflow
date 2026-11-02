@@ -1,7 +1,6 @@
 const Company = require("../models/Company");
 const Staff = require("../models/Staff");
 const Role = require("../models/Role");
-const Subscription = require("../models/Subscription");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { pool } = require("../config/mysqlDb");
@@ -38,16 +37,10 @@ exports.registerCompany = async (req, res) => {
     const existingStaff = await Staff.findOne({ email });
     if (existingStaff) return res.status(400).json({ error: "Staff email already exists" });
 
-    const freePlan = await Subscription.findOne({ billingCycle: "monthly" });
-    const expiry = new Date(); expiry.setMonth(expiry.getMonth() + 1);
-
     const company = await Company.create({
       companyName, gstNumber, panNumber, contactPersonName, contactPersonPhone,
       contactPersonEmail, email, phone, addressLine1, addressLine2, country,
-      state, city, pincode, appLogo: req.file ? `/uploads/${req.file.filename}` : "",
-      subscription: freePlan ? freePlan._id : null,
-      subscriptionStatus: "trial",
-      subscriptionExpiry: expiry
+      state, city, pincode, appLogo: req.file ? `/uploads/${req.file.filename}` : ""
     });
 
     const ownerRole = await Role.create({
@@ -200,6 +193,64 @@ async function saveCompanyData(companyData) {
   return companyData;
 }
 
+// Returns the stored company row only (no default fallback), or null
+async function findStoredCompany(companyId) {
+  const [rows] = await pool.query(
+    "SELECT data FROM collections WHERE collection_name = 'companies' AND _id = ? LIMIT 1",
+    [companyId]
+  );
+  if (!rows || rows.length === 0) return null;
+  return typeof rows[0].data === "string" ? JSON.parse(rows[0].data) : rows[0].data;
+}
+
+// Admin create (Company List page) - stores company record only, no owner/staff accounts
+exports.createCompany = async (req, res) => {
+  try {
+    const {
+      companyName, gstNumber, panNumber, contactPersonName, contactPersonPhone,
+      contactPersonEmail, email, phone, addressLine1, addressLine2, country,
+      state, city, pincode, status
+    } = req.body;
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!companyName || !String(companyName).trim()) return res.status(400).json({ error: "Plese enter company name", field: "companyName" });
+    if (!email || !emailRegex.test(String(email).trim())) return res.status(400).json({ error: "Plese enter email", field: "email" });
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const [dup] = await pool.query(
+      "SELECT _id FROM collections WHERE collection_name = 'companies' AND (LOWER(JSON_UNQUOTE(JSON_EXTRACT(data, '$.email'))) = ? OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(data, '$.companyName'))) = ?) LIMIT 1",
+      [cleanEmail, String(companyName).trim().toLowerCase()]
+    );
+    if (dup.length > 0) return res.status(409).json({ error: "A company with this name or email already exists" });
+
+    const company = {
+      _id: `comp_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      companyName: String(companyName).trim(),
+      gstNumber: gstNumber ? String(gstNumber).toUpperCase() : "",
+      panNumber: panNumber ? String(panNumber).toUpperCase() : "",
+      contactPersonName: contactPersonName || "",
+      contactPersonPhone: contactPersonPhone || "",
+      contactPersonEmail: contactPersonEmail || "",
+      email: cleanEmail,
+      phone: phone || "",
+      addressLine1: addressLine1 || "",
+      addressLine2: addressLine2 || "",
+      country: country || "India",
+      state: state || "",
+      city: city || "",
+      pincode: pincode || "",
+      appLogo: req.file ? `/uploads/${req.file.filename}` : "",
+      status: status || "Active",
+      createdAt: new Date()
+    };
+
+    await saveCompanyData(company);
+    res.status(201).json(company);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 exports.getCompanyById = async (req, res) => {
   try {
     const company = await getCompanyData(req.params.id);
@@ -224,10 +275,12 @@ exports.updateCompany = async (req, res) => {
     }
     if (req.file) updateData.appLogo = `/uploads/${req.file.filename}`;
 
-    const company = await getCompanyData(req.params.id);
+    // getCompanyData() falls back to the default company, so only allow that fallback for 'default_company'
+    let company = await findStoredCompany(req.params.id);
+    if (!company && req.params.id === "default_company") company = await getCompanyData("default_company");
     if (!company) return res.status(404).json({ error: "Company not found" });
 
-    const merged = { ...company, ...updateData };
+    const merged = { ...company, ...updateData, _id: company._id };
     await saveCompanyData(merged);
     res.json(merged);
   } catch (err) {
@@ -237,9 +290,22 @@ exports.updateCompany = async (req, res) => {
 
 exports.deleteCompany = async (req, res) => {
   try {
-    await pool.query("DELETE FROM collections WHERE collection_name = 'companies' AND _id = ?", [req.params.id]);
-    await pool.query("DELETE FROM staff WHERE company_id = ?", [req.params.id]);
-    res.json({ message: "Company and its staff deleted successfully" });
+    const companyId = req.params.id;
+    if (companyId === "default_company") {
+      return res.status(400).json({ error: "The default company cannot be deleted" });
+    }
+
+    const company = await findStoredCompany(companyId);
+    if (!company) return res.status(404).json({ error: "Company not found" });
+
+    // Never cascade-delete staff; refuse while the company still has staff
+    const [[{ count }]] = await pool.query("SELECT COUNT(*) AS count FROM staff WHERE company_id = ?", [companyId]);
+    if (count > 0) {
+      return res.status(409).json({ error: `Company has ${count} staff member(s). Remove or reassign them first.`, count });
+    }
+
+    await pool.query("DELETE FROM collections WHERE collection_name = 'companies' AND _id = ?", [companyId]);
+    res.json({ message: "Company deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

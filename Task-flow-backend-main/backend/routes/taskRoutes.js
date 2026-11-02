@@ -9,11 +9,10 @@ const { pool } = require("../config/mysqlDb");
 const { sendTaskOrIssueMail } = require("../config/mail");
 const { checkAnyPermission } = require("../middleware/permissions");
 const authMiddleware = require("../middleware/auth");
-const { checkPlanLimit } = require("../middleware/subscriptionLimits");
 
 // FILE STORAGE
 const storage = multer.diskStorage({
-  destination: "./uploads",
+  destination: require("../config/uploadDir"),
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
 });
 
@@ -274,7 +273,6 @@ router.post(
   "/",
   authMiddleware,
   checkAnyPermission(["task_management", "issue"], "create"),
-  checkPlanLimit("task"),
   upload.fields([{ name: "image" }, { name: "video" }]),
   async (req, res) => {
     try {
@@ -397,20 +395,6 @@ router.post(
 
       const [subRows] = await pool.query("SELECT * FROM subtasks WHERE task_id = ?", [id]);
       const formatted = formatTask(rows[0], subRows);
-
-      // Email notification
-      if (rows[0].assigned_email) {
-        try {
-          sendTaskOrIssueMail(
-            rows[0].assigned_email,
-            title,
-            description || "",
-            rows[0].assigned_name || "Staff",
-            formatted.status?.name,
-            type || "task"
-          );
-        } catch (mErr) {}
-      }
 
       const io = req.app.get("io");
       if (io) io.emit("task:created", formatted);

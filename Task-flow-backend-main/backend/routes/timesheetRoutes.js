@@ -21,20 +21,26 @@ router.post("/", authMiddleware, async (req, res) => {
     } = req.body;
 
     if (!project_id) {
-      return res.status(400).json({ error: "Plese enter project" });
+      return res.status(400).json({ error: "Please select project" });
+    }
+    if (!task_id) {
+      return res.status(400).json({ error: "Please select task" });
+    }
+    if (!subtask_id) {
+      return res.status(400).json({ error: "Please select sub task" });
     }
     if (!date) {
-      return res.status(400).json({ error: "Plese enter date" });
+      return res.status(400).json({ error: "Please enter date" });
     }
     if (!hours) {
-      return res.status(400).json({ error: "Plese enter hours" });
+      return res.status(400).json({ error: "Please enter hours" });
     }
     const numHours = parseFloat(hours);
     if (isNaN(numHours) || numHours <= 0 || numHours > 24) {
       return res.status(400).json({ error: "Hours must be a positive number up to 24" });
     }
     if (!description || !description.trim()) {
-      return res.status(400).json({ error: "Plese enter description" });
+      return res.status(400).json({ error: "Please enter description" });
     }
 
     const id = `ts_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
@@ -223,6 +229,149 @@ router.get("/summary", authMiddleware, async (req, res) => {
   }
 });
 
+// ─── 4.5 DAILY REPORT HOURS NOT EQUAL TO 9 (ADMIN DASHBOARD) ────────────────
+router.get("/admin/daily-hours", authMiddleware, async (req, res) => {
+  try {
+    const isSuperAdmin = req.user.email === "gadanipranav@gmail.com" || req.user.role?.name === "Super Admin";
+    const isManager = req.user.position?.includes("Manager") || req.user.role?.name?.includes("Manager");
+
+    const isOwner = req.user.role?.name === "Company Owner";
+
+    if (!isSuperAdmin && !isManager && !isOwner) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const targetHours = 9;
+    const { date } = req.query;
+    let dateFilter = `t.date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`;
+    const params = [];
+    if (date) {
+      dateFilter = `t.date = ?`;
+      params.push(date);
+    }
+
+    const [rows] = await pool.query(
+      `SELECT t.date, t.user_id, COALESCE(MAX(s.name), MAX(t.user_name)) AS name,
+              SUM(t.hours) AS total_hours, COUNT(*) AS entries
+       FROM timesheets t
+       LEFT JOIN staff s ON t.user_id = s.id OR (t.user_email = s.email AND t.user_email != '')
+       WHERE (s.status = 'Active' OR s.status IS NULL)
+         AND ${dateFilter}
+       GROUP BY t.date, t.user_id
+       HAVING ABS(SUM(t.hours) - ?) > 0.001
+       ORDER BY t.date DESC, name ASC`,
+      [...params, targetHours]
+    );
+
+    res.json(rows.map(r => {
+      const hours = parseFloat(r.total_hours || 0);
+      return {
+        date: r.date,
+        user_id: r.user_id,
+        name: r.name || "Unknown",
+        hours,
+        entries: r.entries,
+        difference: parseFloat((hours - targetHours).toFixed(2)),
+        flag: hours < targetHours ? "Less" : "More",
+      };
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 4.6 PROJECT HOURS REPORT (SUPER ADMIN ONLY) ────────────────────────────
+const isReportAdmin = (req) =>
+  req.user.email === "gadanipranav@gmail.com" || req.user.role?.name === "Super Admin" || req.user.role === "Super Admin";
+
+// Employees & projects that have daily report entries (keeps filter ids in sync with timesheets)
+router.get("/admin/report-options", authMiddleware, async (req, res) => {
+  try {
+    if (!isReportAdmin(req)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [employees] = await pool.query(
+      `SELECT t.user_id AS id, COALESCE(MAX(s.name), MAX(t.user_name)) AS name
+       FROM timesheets t
+       LEFT JOIN staff s ON t.user_id = s.id OR (t.user_email = s.email AND t.user_email != '')
+       GROUP BY t.user_id
+       ORDER BY name ASC`
+    );
+    const [projects] = await pool.query(
+      `SELECT project_id AS id, MAX(project_name) AS name
+       FROM timesheets
+       GROUP BY project_id
+       ORDER BY name ASC`
+    );
+
+    res.json({ employees, projects });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/admin/project-report", authMiddleware, async (req, res) => {
+  try {
+    if (!isReportAdmin(req)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const { userId, projectId, from, to } = req.query;
+    let where = "WHERE 1=1";
+    const params = [];
+    if (userId) {
+      where += " AND t.user_id = ?";
+      params.push(userId);
+    }
+    if (projectId) {
+      where += " AND t.project_id = ?";
+      params.push(projectId);
+    }
+    if (from) {
+      where += " AND t.date >= ?";
+      params.push(from);
+    }
+    if (to) {
+      where += " AND t.date <= ?";
+      params.push(to);
+    }
+
+    const [summary] = await pool.query(
+      `SELECT t.project_id, MAX(t.project_name) AS project_name,
+              t.user_id, COALESCE(MAX(s.name), MAX(t.user_name)) AS name,
+              SUM(t.hours) AS hours, COUNT(*) AS entries, COUNT(DISTINCT t.date) AS days
+       FROM timesheets t
+       LEFT JOIN staff s ON t.user_id = s.id OR (t.user_email = s.email AND t.user_email != '')
+       ${where}
+       GROUP BY t.project_id, t.user_id
+       ORDER BY project_name ASC, hours DESC`,
+      params
+    );
+
+    const [rows] = await pool.query(
+      `SELECT t.id, t.date, t.user_id, COALESCE(s.name, t.user_name) AS name,
+              t.project_id, t.project_name, t.task_title, t.subtask_title,
+              t.hours, t.description, t.task_status, t.status
+       FROM timesheets t
+       LEFT JOIN staff s ON t.user_id = s.id OR (t.user_email = s.email AND t.user_email != '')
+       ${where}
+       ORDER BY t.date DESC, name ASC
+       LIMIT 2000`,
+      params
+    );
+
+    const toNum = (v) => parseFloat(v || 0);
+    res.json({
+      totalHours: summary.reduce((sum, r) => sum + toNum(r.hours), 0),
+      summary: summary.map(r => ({ ...r, hours: toNum(r.hours) })),
+      rows: rows.map(r => ({ ...r, hours: toNum(r.hours) })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── 5. APPROVE / REJECT TIMESHEET (ADMIN / MANAGER) ────────────────────────
 router.patch("/:id/action", authMiddleware, async (req, res) => {
   try {
@@ -276,6 +425,30 @@ router.put("/:id", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "You can only edit your own timesheet" });
     }
 
+    // Same checks as create
+    if (!project_id) {
+      return res.status(400).json({ error: "Please select project" });
+    }
+    if (!task_id) {
+      return res.status(400).json({ error: "Please select task" });
+    }
+    if (!subtask_id) {
+      return res.status(400).json({ error: "Please select sub task" });
+    }
+    if (!date) {
+      return res.status(400).json({ error: "Please enter date" });
+    }
+    if (hours === undefined || hours === null || hours === "") {
+      return res.status(400).json({ error: "Please enter hours" });
+    }
+    const numHours = Number(hours);
+    if (!Number.isFinite(numHours) || numHours <= 0 || numHours > 24) {
+      return res.status(400).json({ error: "Hours must be a positive number up to 24" });
+    }
+    if (!description || !String(description).trim()) {
+      return res.status(400).json({ error: "Please enter description" });
+    }
+
     const cleanTaskStatus = ["Pending", "In Process", "Complete"].includes(task_status) ? task_status : (existing[0].task_status || "In Process");
 
     await pool.query(
@@ -290,7 +463,7 @@ router.put("/:id", authMiddleware, async (req, res) => {
         subtask_id || null,
         subtask_title || "",
         date,
-        parseFloat(hours),
+        numHours,
         description,
         is_billable ? 1 : 0,
         cleanTaskStatus,
@@ -321,6 +494,11 @@ router.delete("/:id", authMiddleware, async (req, res) => {
   try {
     const userId = req.user._id.toString();
     const isSuperAdmin = req.user.email === "gadanipranav@gmail.com" || req.user.role?.name === "Super Admin";
+
+    const [existing] = await pool.query(`SELECT id FROM timesheets WHERE id = ?`, [req.params.id]);
+    if (!existing.length) {
+      return res.status(404).json({ error: "Timesheet entry not found" });
+    }
 
     if (isSuperAdmin) {
       await pool.query(`DELETE FROM timesheets WHERE id = ?`, [req.params.id]);

@@ -1,6 +1,5 @@
 const Permission = require("../models/Permission");
 const TaskStatus = require("../models/TaskStatus");
-const Subscription = require("../models/Subscription");
 
 module.exports = async function seedDefaults() {
   try {
@@ -39,20 +38,6 @@ module.exports = async function seedDefaults() {
       if (!exists) {
         await TaskStatus.create({ name: statusName, status: "Active", project: null });
         console.log(`✅ Created global status: ${statusName}`);
-      }
-    }
-
-    // 3. Seed Default Subscription Plans
-    const plans = [
-      { name: "Free", price: 0, billingCycle: "monthly", maxStaff: 5, maxProjects: 1, maxTasks: 25, maxDocuments: 10, maxStatuses: 5, maxIssues: 10 },
-      { name: "Quarterly", price: 44, billingCycle: "quarterly", maxStaff: 50, maxProjects: 1, maxTasks: 250, maxDocuments: 100, maxStatuses: 50, maxIssues: 100 },
-      { name: "Yearly", price: 96, billingCycle: "yearly", maxStaff: -1, maxProjects: -1, maxTasks: -1, maxDocuments: -1, maxStatuses: -1, maxIssues: -1 }
-    ];
-
-    for (const plan of plans) {
-      if (!(await Subscription.findOne({ name: plan.name, billingCycle: plan.billingCycle }))) {
-        await Subscription.create(plan);
-        console.log(`✅ Created plan: ${plan.name}`);
       }
     }
 

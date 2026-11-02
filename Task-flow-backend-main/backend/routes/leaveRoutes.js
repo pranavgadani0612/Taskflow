@@ -3,6 +3,7 @@ const router = express.Router();
 const authMiddleware = require("../middleware/auth");
 const { checkPermission } = require("../middleware/permissions");
 const { pool } = require("../config/mysqlDb");
+const { sendLeaveDecisionMail } = require("../config/mail");
 
 // Helper: Super Admin or Company Owner check (Only Super Admin can approve/view all leaves)
 const isSuperAdminOrManager = (req) => {
@@ -54,9 +55,15 @@ const validateShortLeaveDay = async ({ userId, userEmail, date, startMins, endMi
 
 // Helper: Super Admin configured max short leave duration (minutes, default 2 hours)
 const getMaxShortLeaveMinutes = async () => {
-  const [rows] = await pool.query("SELECT max_short_leave_minutes FROM company_leave_settings WHERE id = 'default_policy' LIMIT 1");
+  const [rows] = await pool.query("SELECT max_short_leave_minutes, max_short_leaves_per_month FROM company_leave_settings WHERE id = 'default_policy' LIMIT 1");
   const val = Number(rows[0]?.max_short_leave_minutes);
   return val > 0 ? val : 120;
+};
+
+const getMaxShortLeavesPerMonth = async () => {
+  const [rows] = await pool.query("SELECT max_short_leaves_per_month FROM company_leave_settings WHERE id = 'default_policy' LIMIT 1");
+  const val = Number(rows[0]?.max_short_leaves_per_month);
+  return val > 0 ? val : 2; // Default 2 short leaves per month
 };
 
 // 90 -> "1 hr 30 min", 120 -> "2 hrs"
@@ -69,6 +76,11 @@ const formatShortLeaveLimit = (mins) => {
 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Real calendar date check (DATE_RE alone lets 2026-13-45 through)
+const isRealDate = (str) => {
+  const d = new Date(`${str}T00:00:00Z`);
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === str;
+};
 const LEAVE_TYPES = ["Casual Leave", "Sick Leave", "Privilege Leave", "Comp-Off", "Unpaid Leave"];
 
 const BALANCE_COLUMN = {
@@ -157,8 +169,24 @@ const numericBalance = (b) => b && ({
 // Helper: side-effects of an approved leave -> deduct balance + mark attendance 'On Leave'
 const applyApprovedLeave = async (leave) => {
   const col = BALANCE_COLUMN[leave.leave_type];
+  const leaveYear = leave.from_date ? new Date(leave.from_date).getFullYear() : new Date().getFullYear();
   if (col) {
-    await pool.query(`UPDATE leave_balances SET ${col} = ${col} - ? WHERE user_id = ?`, [parseFloat(leave.total_days), leave.user_id]);
+    // Ensure the employee has a balance record for that year
+    const [policyRows] = await pool.query("SELECT * FROM company_leave_settings WHERE id = 'default_policy' LIMIT 1");
+    const policy = policyRows[0] || { cl_default: 12, sl_default: 8, pl_default: 15, comp_off_default: 2 };
+    await pool.query(
+      `INSERT INTO leave_balances (id, user_id, user_name, user_email, cl_balance, sl_balance, pl_balance, comp_off, year)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE user_name = VALUES(user_name), user_email = VALUES(user_email)`,
+      [`bal_${leave.user_id}_${leaveYear}`, leave.user_id, leave.user_name, leave.user_email || '', policy.cl_default, policy.sl_default, policy.pl_default, policy.comp_off_default, leaveYear]
+    );
+
+    await pool.query(
+      `UPDATE leave_balances 
+       SET ${col} = ${col} - ? 
+       WHERE (user_id = ? OR (user_email = ? AND user_email != '')) AND year = ?`, 
+      [parseFloat(leave.total_days), leave.user_id, leave.user_email || '', leaveYear]
+    );
   }
   for (const dateStr of await getLeaveWeekdays(leave)) {
     const attId = `att_leave_${leave.user_id}_${dateStr}`;
@@ -174,8 +202,14 @@ const applyApprovedLeave = async (leave) => {
 // Helper: undo an approved leave (used when Super Admin edits/deletes it) -> refund balance + clear 'On Leave'
 const revertApprovedLeave = async (leave) => {
   const col = BALANCE_COLUMN[leave.leave_type];
+  const leaveYear = leave.from_date ? new Date(leave.from_date).getFullYear() : new Date().getFullYear();
   if (col) {
-    await pool.query(`UPDATE leave_balances SET ${col} = ${col} + ? WHERE user_id = ?`, [parseFloat(leave.total_days), leave.user_id]);
+    await pool.query(
+      `UPDATE leave_balances 
+       SET ${col} = ${col} + ? 
+       WHERE (user_id = ? OR (user_email = ? AND user_email != '')) AND year = ?`, 
+      [parseFloat(leave.total_days), leave.user_id, leave.user_email || '', leaveYear]
+    );
   }
   for (const dateStr of await getLeaveWeekdays(leave)) {
     // Days the employee never clocked in are removed; days they worked become Present
@@ -251,12 +285,29 @@ router.get("/admin/balances", authMiddleware, async (req, res) => {
     if (!isSuperAdminOrManager(req)) {
       return res.status(403).json({ error: "Access denied" });
     }
+    const targetYear = req.query.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
+
+    // Auto-initialize any active staff that don't have a balance record for this targetYear
+    const [policyRows] = await pool.query("SELECT * FROM company_leave_settings WHERE id = 'default_policy' LIMIT 1");
+    const policy = policyRows[0] || { cl_default: 12, sl_default: 8, pl_default: 15, comp_off_default: 2 };
+
+    const [activeStaff] = await pool.query("SELECT id, name, email FROM staff WHERE status = 'Active'");
+    for (const staff of activeStaff) {
+      await pool.query(
+        `INSERT INTO leave_balances (id, user_id, user_name, user_email, cl_balance, sl_balance, pl_balance, comp_off, year)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE user_name = VALUES(user_name), user_email = VALUES(user_email)`,
+        [`bal_${staff.id}_${targetYear}`, staff.id, staff.name, staff.email || '', policy.cl_default, policy.sl_default, policy.pl_default, policy.comp_off_default, targetYear]
+      );
+    }
+
     const [rows] = await pool.query(
       `SELECT b.* 
        FROM leave_balances b
        INNER JOIN staff s ON b.user_id = s.id
-       WHERE s.status = 'Active'
-       ORDER BY b.user_name ASC`
+       WHERE s.status = 'Active' AND b.year = ?
+       ORDER BY b.user_name ASC`,
+      [targetYear]
     );
     res.json(rows.map(numericBalance));
   } catch (err) {
@@ -271,6 +322,21 @@ router.put("/admin/balances/:id", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "Access denied" });
     }
     const { cl_balance, sl_balance, pl_balance, comp_off } = req.body;
+    const [existing] = await pool.query("SELECT * FROM leave_balances WHERE id = ?", [req.params.id]);
+    if (!existing.length) {
+      return res.status(404).json({ error: "Leave balance record not found" });
+    }
+
+    for (const [key, val] of Object.entries({ cl_balance, sl_balance, pl_balance, comp_off })) {
+      if (val === undefined || val === null) continue; // not sent -> keep current value
+      const num = Number(val);
+      // An unchanged value is allowed (balance can already be negative after a forced approval)
+      const unchanged = Number.isFinite(num) && num === Number(existing[0][key]);
+      if (val === "" || !Number.isFinite(num) || (num < 0 && !unchanged)) {
+        return res.status(400).json({ error: "Please enter a valid non-negative number", field: key });
+      }
+    }
+
     await pool.query(
       `UPDATE leave_balances 
        SET cl_balance = COALESCE(?, cl_balance),
@@ -305,8 +371,25 @@ router.put("/company-policy", authMiddleware, async (req, res) => {
     if (!isSuperAdminOrManager(req)) {
       return res.status(403).json({ error: "Access denied" });
     }
-    const { cl_default, sl_default, pl_default, comp_off_default, max_cl_per_month, max_pl_per_month, applyToExisting } = req.body;
-    
+    const { applyToExisting } = req.body;
+
+    // 0 is a valid default; only missing/blank values fall back. Non-numeric or negative -> 400
+    const policyValues = {};
+    const fallbacks = { cl_default: 12, sl_default: 8, pl_default: 15, comp_off_default: 0, max_cl_per_month: 1, max_pl_per_month: 5 };
+    for (const [key, fallback] of Object.entries(fallbacks)) {
+      const raw = req.body[key];
+      const isMax = key.startsWith("max_");
+      if (raw === undefined || (!isMax && (raw === null || raw === ""))) {
+        policyValues[key] = fallback;
+        continue;
+      }
+      const num = Number(raw);
+      if (!Number.isFinite(num) || num < 0) {
+        return res.status(400).json({ error: "Please enter a valid non-negative number", field: key });
+      }
+      policyValues[key] = num;
+    }
+
     await pool.query(
       `INSERT INTO company_leave_settings (id, cl_default, sl_default, pl_default, comp_off_default, max_cl_per_month, max_pl_per_month)
        VALUES ('default_policy', ?, ?, ?, ?, ?, ?)
@@ -318,21 +401,23 @@ router.put("/company-policy", authMiddleware, async (req, res) => {
          max_cl_per_month = VALUES(max_cl_per_month),
          max_pl_per_month = VALUES(max_pl_per_month)`,
       [
-        Number(cl_default) || 12, 
-        Number(sl_default) || 8, 
-        Number(pl_default) || 15, 
-        Number(comp_off_default) || 0,
-        max_cl_per_month !== undefined ? Number(max_cl_per_month) : 1,
-        max_pl_per_month !== undefined ? Number(max_pl_per_month) : 5
+        policyValues.cl_default,
+        policyValues.sl_default,
+        policyValues.pl_default,
+        policyValues.comp_off_default,
+        policyValues.max_cl_per_month,
+        policyValues.max_pl_per_month
       ]
     );
 
     // If super admin wants this policy to apply to all current employees
     if (applyToExisting) {
+      const targetYear = req.body.year ? parseInt(req.body.year, 10) : new Date().getFullYear();
       await pool.query(
         `UPDATE leave_balances 
-         SET cl_balance = ?, sl_balance = ?, pl_balance = ?, comp_off = ?`,
-        [Number(cl_default) || 12, Number(sl_default) || 8, Number(pl_default) || 15, Number(comp_off_default) || 0]
+         SET cl_balance = ?, sl_balance = ?, pl_balance = ?, comp_off = ?
+         WHERE year = ?`,
+        [policyValues.cl_default, policyValues.sl_default, policyValues.pl_default, policyValues.comp_off_default, targetYear]
       );
     }
 
@@ -346,7 +431,12 @@ router.put("/company-policy", authMiddleware, async (req, res) => {
 router.get("/short-leave-settings", authMiddleware, async (req, res) => {
   try {
     const maxMinutes = await getMaxShortLeaveMinutes();
-    res.json({ max_short_leave_minutes: maxMinutes, max_short_leave_hours: maxMinutes / 60 });
+    const maxPerMonth = await getMaxShortLeavesPerMonth();
+    res.json({
+      max_short_leave_minutes: maxMinutes,
+      max_short_leave_hours: maxMinutes / 60,
+      max_short_leaves_per_month: maxPerMonth
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -358,16 +448,33 @@ router.put("/short-leave-settings", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "Access denied" });
     }
     const hours = parseFloat(req.body.max_short_leave_hours);
+    const maxPerMonth = req.body.max_short_leaves_per_month !== undefined ? parseInt(req.body.max_short_leaves_per_month) : null;
+
     if (isNaN(hours) || hours <= 0 || hours > 12) {
       return res.status(400).json({ error: "Plese enter valid hours (between 0.5 and 12)", field: "max_short_leave_hours" });
     }
+    if (maxPerMonth !== null && (isNaN(maxPerMonth) || maxPerMonth < 1 || maxPerMonth > 31)) {
+      return res.status(400).json({ error: "Please enter a valid monthly short leave count (between 1 and 31)", field: "max_short_leaves_per_month" });
+    }
+
     const minutes = Math.round(hours * 60);
+    const countLimit = maxPerMonth !== null ? maxPerMonth : 2;
+
     await pool.query(
-      `INSERT INTO company_leave_settings (id, max_short_leave_minutes) VALUES ('default_policy', ?)
-       ON DUPLICATE KEY UPDATE max_short_leave_minutes = VALUES(max_short_leave_minutes)`,
-      [minutes]
+      `INSERT INTO company_leave_settings (id, max_short_leave_minutes, max_short_leaves_per_month) 
+       VALUES ('default_policy', ?, ?)
+       ON DUPLICATE KEY UPDATE 
+         max_short_leave_minutes = VALUES(max_short_leave_minutes),
+         max_short_leaves_per_month = VALUES(max_short_leaves_per_month)`,
+      [minutes, countLimit]
     );
-    res.json({ message: `Short leave limit set to ${formatShortLeaveLimit(minutes)}`, max_short_leave_minutes: minutes, max_short_leave_hours: minutes / 60 });
+
+    res.json({
+      message: `Short leave settings updated: ${formatShortLeaveLimit(minutes)} per short leave, max ${countLimit} per month.`,
+      max_short_leave_minutes: minutes,
+      max_short_leave_hours: minutes / 60,
+      max_short_leaves_per_month: countLimit
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -380,10 +487,11 @@ router.get("/balance", authMiddleware, async (req, res) => {
     const userName = req.user.name || "Employee";
     const userEmail = req.user.email || "";
 
-    // Query balance by user_id OR user_email (so seeding or login ID always matches)
+    const targetYear = req.query.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
+    // Query balance by (user_id OR user_email) AND year
     let [rows] = await pool.query(
-      "SELECT * FROM leave_balances WHERE user_id = ? OR (user_email = ? AND user_email != '') LIMIT 1",
-      [userId, userEmail]
+      "SELECT * FROM leave_balances WHERE (user_id = ? OR (user_email = ? AND user_email != '')) AND year = ? LIMIT 1",
+      [userId, userEmail, targetYear]
     );
 
     // If no balance record exists yet, initialize using Company-Wide Policy defaults
@@ -391,10 +499,10 @@ router.get("/balance", authMiddleware, async (req, res) => {
       const [policyRows] = await pool.query("SELECT * FROM company_leave_settings WHERE id = 'default_policy' LIMIT 1");
       const policy = policyRows[0] || { cl_default: 12, sl_default: 8, pl_default: 15, comp_off_default: 2 };
 
-      const id = `bal_${Date.now()}`;
+      const id = `bal_${userId}_${targetYear}`;
       await pool.query(
-        "INSERT INTO leave_balances (id, user_id, user_name, user_email, cl_balance, sl_balance, pl_balance, comp_off) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [id, userId, userName, userEmail, policy.cl_default, policy.sl_default, policy.pl_default, policy.comp_off_default]
+        "INSERT INTO leave_balances (id, user_id, user_name, user_email, cl_balance, sl_balance, pl_balance, comp_off, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE user_name = VALUES(user_name)",
+        [id, userId, userName, userEmail, policy.cl_default, policy.sl_default, policy.pl_default, policy.comp_off_default, targetYear]
       );
       [rows] = await pool.query("SELECT * FROM leave_balances WHERE id = ?", [id]);
     } else if (rows[0].user_id !== userId && userEmail) {
@@ -444,6 +552,12 @@ router.post("/apply", authMiddleware, async (req, res) => {
     }
     if (!DATE_RE.test(from_date) || !DATE_RE.test(to_date)) {
       return res.status(400).json({ error: "Invalid date format." });
+    }
+    if (!isRealDate(from_date)) {
+      return res.status(400).json({ error: "Please enter a valid date", field: "from_date" });
+    }
+    if (!isRealDate(to_date)) {
+      return res.status(400).json({ error: "Please enter a valid date", field: "to_date" });
     }
 
     const start = new Date(from_date);
@@ -529,6 +643,12 @@ router.put("/:id", authMiddleware, async (req, res) => {
     }
     if (!DATE_RE.test(from_date) || !DATE_RE.test(to_date)) {
       return res.status(400).json({ error: "Invalid date format." });
+    }
+    if (!isRealDate(from_date)) {
+      return res.status(400).json({ error: "Please enter a valid date", field: "from_date" });
+    }
+    if (!isRealDate(to_date)) {
+      return res.status(400).json({ error: "Please enter a valid date", field: "to_date" });
     }
 
     const start = new Date(from_date);
@@ -623,7 +743,7 @@ router.get("/all", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const { status } = req.query;
+    const { status, upcomingDays } = req.query;
     let query = `
       SELECT lr.* 
       FROM leave_requests lr
@@ -636,7 +756,15 @@ router.get("/all", authMiddleware, async (req, res) => {
       query += " AND lr.status = ?";
       params.push(status);
     }
-    query += " ORDER BY lr.created_at DESC";
+
+    if (upcomingDays) {
+      const days = parseInt(upcomingDays, 10) || 10;
+      query += " AND lr.to_date >= CURDATE() AND lr.from_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)";
+      params.push(days);
+      query += " ORDER BY lr.from_date ASC";
+    } else {
+      query += " ORDER BY lr.created_at DESC";
+    }
 
     const [rows] = await pool.query(query, params);
     res.json(rows);
@@ -655,6 +783,9 @@ router.patch("/:id/action", authMiddleware, async (req, res) => {
     const { id } = req.params;
     const { action, rejection_reason, force } = req.body; // action: 'Approved' | 'Rejected'
     const approved_by = req.user.name || "Admin";
+    if (!["Approved", "Rejected"].includes(action)) {
+      return res.status(400).json({ error: "Action must be 'Approved' or 'Rejected'" });
+    }
 
     const [reqRows] = await pool.query("SELECT * FROM leave_requests WHERE id = ?", [id]);
     if (reqRows.length === 0) return res.status(404).json({ error: "Leave request not found" });
@@ -664,7 +795,11 @@ router.patch("/:id/action", authMiddleware, async (req, res) => {
     // Balance lower than the leave -> ask Admin to confirm (balance will go negative)
     const col = BALANCE_COLUMN[leave.leave_type];
     if (action === "Approved" && leave.status !== "Approved" && col && !force) {
-      const [balRows] = await pool.query(`SELECT ${col} AS bal FROM leave_balances WHERE user_id = ? LIMIT 1`, [leave.user_id]);
+      const leaveYear = leave.from_date ? new Date(leave.from_date).getFullYear() : new Date().getFullYear();
+      const [balRows] = await pool.query(
+        `SELECT ${col} AS bal FROM leave_balances WHERE (user_id = ? OR (user_email = ? AND user_email != '')) AND year = ? LIMIT 1`,
+        [leave.user_id, leave.user_email || '', leaveYear]
+      );
       const available = Number(balRows[0]?.bal ?? 0);
       const required = Number(leave.total_days);
       if (available < required) {
@@ -673,7 +808,7 @@ router.patch("/:id/action", authMiddleware, async (req, res) => {
           available,
           required,
           afterApproval: Number((available - required).toFixed(1)),
-          message: `${leave.user_name} nu ${leave.leave_type} balance fakt ${available} che, aa leave ${required} divas ni che. Approve karso to balance ${Number((available - required).toFixed(1))} thashe. Chhata approve karvi che?`
+          message: `${leave.user_name}'s ${leave.leave_type} balance is only ${available} day(s), but this leave request is for ${required} day(s). Approving will result in a negative balance of ${Number((available - required).toFixed(1))} day(s). Do you still want to approve?`
         });
       }
     }
@@ -689,6 +824,24 @@ router.patch("/:id/action", authMiddleware, async (req, res) => {
       "UPDATE leave_requests SET status = ?, approved_by = ?, rejection_reason = ? WHERE id = ?",
       [action, approved_by, rejection_reason || null, id]
     );
+
+    // Send email notification to the employee
+    const targetEmail = leave.user_email;
+    if (targetEmail) {
+      sendLeaveDecisionMail({
+        to: targetEmail,
+        recipientName: leave.user_name || "Team Member",
+        leaveType: leave.leave_type,
+        fromDate: leave.from_date,
+        toDate: leave.to_date,
+        totalDays: leave.total_days,
+        dayType: leave.day_type,
+        action,
+        approvedBy: approved_by,
+        rejectionReason: rejection_reason || "",
+        isShortLeave: false
+      }).catch(e => console.error("Leave mail send error:", e));
+    }
 
     res.json({ message: `Leave ${action} successfully!` });
   } catch (err) {
@@ -743,6 +896,23 @@ router.post("/short-leave", authMiddleware, async (req, res) => {
     const dayError = await validateShortLeaveDay({ userId, userEmail, date, startMins, endMins });
     if (dayError) {
       return res.status(400).json({ error: dayError });
+    }
+
+    // Check Monthly Short Leave Count Limit
+    const maxPerMonth = await getMaxShortLeavesPerMonth();
+    const monthPrefix = String(date).slice(0, 7); // e.g. "2026-10"
+    const [monthCountRows] = await pool.query(
+      `SELECT COUNT(*) as count FROM short_leaves 
+       WHERE user_id = ? 
+         AND date LIKE ? 
+         AND status IN ('Pending', 'Approved')`,
+      [userId, `${monthPrefix}%`]
+    );
+    const currentMonthCount = monthCountRows[0]?.count || 0;
+    if (currentMonthCount >= maxPerMonth) {
+      return res.status(400).json({
+        error: `Monthly short leave limit reached! You can take a maximum of ${maxPerMonth} short leave(s) per month (Already applied/approved: ${currentMonthCount}).`
+      });
     }
 
     const calculatedHours = Number((diffMinutes / 60).toFixed(1));
@@ -912,10 +1082,29 @@ router.patch("/short-leave/:id/action", authMiddleware, async (req, res) => {
     const [reqRows] = await pool.query("SELECT * FROM short_leaves WHERE id = ?", [id]);
     if (reqRows.length === 0) return res.status(404).json({ error: "Short leave request not found" });
 
+    const sl = reqRows[0];
+
     await pool.query(
       "UPDATE short_leaves SET status = ?, approved_by = ? WHERE id = ?",
       [action, approved_by, id]
     );
+
+    // Send email notification to employee
+    const targetEmail = sl.user_email;
+    if (targetEmail) {
+      sendLeaveDecisionMail({
+        to: targetEmail,
+        recipientName: sl.user_name || "Team Member",
+        leaveType: "Short Leave",
+        fromDate: sl.date,
+        toDate: sl.date,
+        totalDays: sl.hours,
+        action,
+        approvedBy: approved_by,
+        isShortLeave: true,
+        shortLeaveTime: `${sl.from_time} - ${sl.to_time}`
+      }).catch(e => console.error("Short leave mail send error:", e));
+    }
 
     res.json({ message: `Short leave ${action} successfully!` });
   } catch (err) {

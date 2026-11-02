@@ -203,8 +203,11 @@ router.put("/:id", authMiddleware, async (req, res) => {
     }
 
     const { title, content, priority, target_department, pinned, requires_acknowledgment } = req.body;
-    if (!title || !content) {
-      return res.status(400).json({ error: "Title and content are required." });
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ error: "Please enter notice title", field: "title" });
+    }
+    if (!content || !String(content).trim()) {
+      return res.status(400).json({ error: "Please enter content", field: "content" });
     }
 
     const [rows] = await pool.query("SELECT * FROM announcements WHERE id = ?", [req.params.id]);

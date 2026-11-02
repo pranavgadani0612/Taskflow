@@ -21,10 +21,16 @@ router.post("/", authMiddleware, checkPermission("permission_management", "creat
     if (!name || !name.trim()) return res.status(400).json({ error: "Plese enter permission name", field: "name" });
     if (!value) return res.status(400).json({ error: "Plese enter permission value", field: "value" });
 
+    const [dup] = await pool.query("SELECT id FROM permissions WHERE value = ? LIMIT 1", [value]);
+    if (dup.length > 0) return res.status(409).json({ error: "Permission value already exists", field: "value" });
+
     const id = `perm_${Date.now()}`;
     await pool.query("INSERT INTO permissions (id, name, value) VALUES (?, ?, ?)", [id, name, value]);
     res.json({ _id: id, id, name, value });
   } catch (err) {
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Permission value already exists", field: "value" });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -36,10 +42,18 @@ router.put("/:id", authMiddleware, checkPermission("permission_management", "upd
     if (name !== undefined && (!name || !name.trim())) {
       return res.status(400).json({ error: "Plese enter permission name", field: "name" });
     }
-    await pool.query("UPDATE permissions SET name = COALESCE(?, name), value = COALESCE(?, value) WHERE id = ?", [name, value, req.params.id]);
+    if (value) {
+      const [dup] = await pool.query("SELECT id FROM permissions WHERE value = ? AND id != ? LIMIT 1", [value, req.params.id]);
+      if (dup.length > 0) return res.status(409).json({ error: "Permission value already exists", field: "value" });
+    }
+    const [result] = await pool.query("UPDATE permissions SET name = COALESCE(?, name), value = COALESCE(?, value) WHERE id = ?", [name, value, req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Permission not found" });
     const [rows] = await pool.query("SELECT id as _id, id, name, value FROM permissions WHERE id = ?", [req.params.id]);
     res.json(rows[0]);
   } catch (err) {
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Permission value already exists", field: "value" });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -47,7 +61,8 @@ router.put("/:id", authMiddleware, checkPermission("permission_management", "upd
 // DELETE permission
 router.delete("/:id", authMiddleware, checkPermission("permission_management", "delete"), async (req, res) => {
   try {
-    await pool.query("DELETE FROM permissions WHERE id = ?", [req.params.id]);
+    const [result] = await pool.query("DELETE FROM permissions WHERE id = ?", [req.params.id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Permission not found" });
     res.json({ message: "Deleted" });
   } catch (err) {
     res.status(500).json({ error: err.message });

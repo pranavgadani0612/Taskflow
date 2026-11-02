@@ -3,6 +3,7 @@ const router = express.Router();
 const authMiddleware = require("../middleware/auth");
 const { checkPermission } = require("../middleware/permissions");
 const { pool, logAudit } = require("../config/mysqlDb");
+const { closeStaleBreaks } = require("../utils/breakHelpers");
 
 // Helper: Check if user is Super Admin or Company Owner
 const isUserSuperAdmin = (req) => {
@@ -59,7 +60,7 @@ const formatMinutesTo12Hr = (mins) => {
 };
 
 // Helper: Calculate shift requirements, breaks, and excess break duration
-const getShiftAndBreakInfo = async (userId, userEmail, today, now, clockInTime, existingTotalBreak) => {
+const getShiftAndBreakInfo = async (userId, userEmail, today, now, clockInTime, existingTotalBreak, clockOutTime = null) => {
   // 1. Fetch Today's Work Schedule (default 9 hours)
   const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const currentDayName = daysOfWeek[now.getDay()];
@@ -90,12 +91,15 @@ const getShiftAndBreakInfo = async (userId, userEmail, today, now, clockInTime, 
 
   const policyMap = {};
   let defaultLunchAllowed = 40; // Default Lunch Break is 40 minutes
+  let totalPolicyAllowed = 0; // Sum of all active break policies = daily break allowance
   for (const bt of breakTypes) {
     policyMap[bt.name.trim().toLowerCase()] = bt.duration_minutes;
+    totalPolicyAllowed += bt.duration_minutes || 0;
     if (bt.name.toLowerCase().includes("lunch")) {
       defaultLunchAllowed = bt.duration_minutes;
     }
   }
+  const hasPolicies = breakTypes.length > 0;
 
   let totalExcessBreakMinutes = 0;
   const excessBreakBreakdown = [];
@@ -111,11 +115,14 @@ const getShiftAndBreakInfo = async (userId, userEmail, today, now, clockInTime, 
     const normReason = (b.reason || "").trim().toLowerCase();
     let allowedForThisBreak = policyMap[normReason];
     if (allowedForThisBreak === undefined) {
-      const matchedKey = Object.keys(policyMap).find(k => normReason.includes(k) || k.includes(normReason));
+      const matchedKey = normReason
+        ? Object.keys(policyMap).find(k => normReason.includes(k) || k.includes(normReason))
+        : undefined;
       if (matchedKey) {
         allowedForThisBreak = policyMap[matchedKey];
       } else {
-        allowedForThisBreak = defaultLunchAllowed;
+        // Break not covered by any active policy has no allowance (only fall back when no policies are configured)
+        allowedForThisBreak = hasPolicies ? 0 : defaultLunchAllowed;
       }
     }
 
@@ -126,11 +133,13 @@ const getShiftAndBreakInfo = async (userId, userEmail, today, now, clockInTime, 
     }
   }
 
-  // Fallback: check against attendance table total_break_minutes
+  // Fallback for legacy break-toggle (no break_logs today): compare attendance total_break_minutes
+  // against the full daily allowance. Skipped when break_logs exist, since those were checked per policy above.
   const overallBreakTaken = Math.max(totalBreakMinutesTaken, existingTotalBreak || 0);
-  if (totalExcessBreakMinutes === 0 && overallBreakTaken > defaultLunchAllowed) {
-    totalExcessBreakMinutes = overallBreakTaken - defaultLunchAllowed;
-    excessBreakBreakdown.push(`Total breaks took ${overallBreakTaken}m (allowed ${defaultLunchAllowed}m, +${totalExcessBreakMinutes}m excess)`);
+  const dailyAllowed = hasPolicies ? totalPolicyAllowed : defaultLunchAllowed;
+  if (todayBreaks.length === 0 && overallBreakTaken > dailyAllowed) {
+    totalExcessBreakMinutes = overallBreakTaken - dailyAllowed;
+    excessBreakBreakdown.push(`Total breaks took ${overallBreakTaken}m (allowed ${dailyAllowed}m, +${totalExcessBreakMinutes}m excess)`);
   }
 
   // Shift is extended by any excess break taken (e.g. 9 hours + 20 min excess)
@@ -139,7 +148,9 @@ const getShiftAndBreakInfo = async (userId, userEmail, today, now, clockInTime, 
   let elapsedMinutes = 0;
   let remainingMinutes = requiredTotalShiftMinutes;
   if (clockInTime) {
-    elapsedMinutes = Math.max(0, Math.floor((now - new Date(clockInTime)) / (1000 * 60)));
+    // Stop counting once the employee has clocked out
+    const endTime = clockOutTime ? new Date(clockOutTime) : now;
+    elapsedMinutes = Math.max(0, Math.floor((endTime - new Date(clockInTime)) / (1000 * 60)));
     remainingMinutes = Math.max(0, requiredTotalShiftMinutes - elapsedMinutes);
   }
 
@@ -194,7 +205,8 @@ router.get("/today", authMiddleware, async (req, res) => {
 
     // Also fetch today's work schedule and calculate break details
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const now = new Date();
+    // Same IST clock as clock-in/clock-out so remaining shift minutes match
+    const now = getISTNow();
     const currentDayName = daysOfWeek[now.getDay()];
 
     const shiftDetails = await getShiftAndBreakInfo(
@@ -203,7 +215,8 @@ router.get("/today", authMiddleware, async (req, res) => {
       today,
       now,
       rows[0]?.clock_in,
-      rows[0]?.total_break_minutes
+      rows[0]?.total_break_minutes,
+      rows[0]?.clock_out
     );
 
     const sched = shiftDetails.sched;
@@ -256,6 +269,7 @@ router.get("/today", authMiddleware, async (req, res) => {
         timing: shiftDetails.shiftTiming,
         standardShiftHours: shiftDetails.standardShiftHours,
         standardShiftMinutes: shiftDetails.standardShiftMinutes,
+        firstHalfMinutes: Math.round(shiftDetails.schedFirstHalfHours * 60),
         requiredShiftMinutes: shiftDetails.requiredTotalShiftMinutes,
         excessBreakMinutes: shiftDetails.totalExcessBreakMinutes,
         excessBreakBreakdown: shiftDetails.excessBreakBreakdown,
@@ -529,6 +543,45 @@ router.post("/clock-out", authMiddleware, async (req, res) => {
       });
     }
 
+    // Timesheet Check: employee must fill their timesheet before leaving
+    const [tsRows] = await pool.query(
+      "SELECT COALESCE(SUM(hours), 0) AS total_logged FROM timesheets WHERE (user_id = ? OR user_email = ?) AND date = ?",
+      [userId, userEmail, today]
+    );
+    const loggedTimesheetHours = parseFloat(tsRows[0]?.total_logged || 0);
+    if (loggedTimesheetHours <= 0) {
+      return res.status(400).json({
+        error: `Daily Timesheet Incomplete! You must fill your Timesheet entries for today before you can Clock Out. Please open Timesheet and log your project work.`
+      });
+    }
+
+    // End any break still running so it doesn't stay open into the next day
+    await closeStaleBreaks(userId, userEmail, today);
+    const [openBreaks] = await pool.query(
+      "SELECT * FROM break_logs WHERE (user_id = ? OR (user_email = ? AND user_email != '')) AND end_time IS NULL AND date = ?",
+      [userId, userEmail, today]
+    );
+    let closedBreakMinutes = 0;
+    for (const b of openBreaks) {
+      const dur = Math.max(1, Math.round((now - new Date(b.start_time)) / 60000));
+      await pool.query(
+        "UPDATE break_logs SET end_time = ?, duration_minutes = ?, status = 'Completed' WHERE id = ?",
+        [now, dur, b.id]
+      );
+      closedBreakMinutes += dur;
+    }
+    // Legacy break-toggle break (attendance.break_start without a break_logs row)
+    if (!openBreaks.length && existing[0].break_start) {
+      closedBreakMinutes += Math.max(1, Math.round((now - new Date(existing[0].break_start)) / 60000));
+    }
+    const totalBreakMinutes = (existing[0].total_break_minutes || 0) + closedBreakMinutes;
+    if (closedBreakMinutes > 0 || existing[0].break_start) {
+      await pool.query(
+        "UPDATE attendance SET break_start = NULL, break_end = ?, total_break_minutes = ? WHERE id = ?",
+        [now, totalBreakMinutes, existing[0].id]
+      );
+    }
+
     // 1. Calculate shift & break requirements
     const shiftDetails = await getShiftAndBreakInfo(
       userId,
@@ -536,7 +589,7 @@ router.post("/clock-out", authMiddleware, async (req, res) => {
       today,
       now,
       existing[0].clock_in,
-      existing[0].total_break_minutes
+      totalBreakMinutes
     );
 
     const {
@@ -550,26 +603,19 @@ router.post("/clock-out", authMiddleware, async (req, res) => {
 
     const remainingMinutes = Math.max(0, requiredTotalShiftMinutes - elapsedMinutes);
 
-    // 2. Timesheet Check: employee must fill their timesheet before leaving
-    const [tsRows] = await pool.query(
-      "SELECT COALESCE(SUM(hours), 0) AS total_logged FROM timesheets WHERE (user_id = ? OR user_email = ?) AND date = ?",
-      [userId, userEmail, today]
-    );
-    const loggedTimesheetHours = parseFloat(tsRows[0]?.total_logged || 0);
-    if (loggedTimesheetHours <= 0) {
-      return res.status(400).json({
-        error: `Daily Timesheet Incomplete! You must fill your Timesheet entries for today before you can Clock Out. Please open Timesheet and log your project work.`
-      });
-    }
-
     // 3. Total Effective Working Hours (elapsed minus excess break)
     const effectiveWorkingMs = Math.max(0, (elapsedMinutes - totalExcessBreakMinutes) * 60 * 1000);
     const totalHours = (effectiveWorkingMs / (1000 * 60 * 60)).toFixed(2);
 
+    // Status by work done: first half not complete -> Absent (full day leave),
+    // first half done but full shift not complete -> Half Day, full shift -> Present
+    const workedMinutes = Math.max(0, elapsedMinutes - totalExcessBreakMinutes);
     let status = "Present";
     if (existing[0].status === "On Leave") {
       status = "On Leave"; // approved leave day stays On Leave until Admin edits it
-    } else if (parseFloat(totalHours) < (standardShiftMinutes / 60) * 0.5) {
+    } else if (workedMinutes < schedFirstHalfHours * 60) {
+      status = "Absent";
+    } else if (workedMinutes < standardShiftMinutes) {
       status = "Half Day";
     }
 
@@ -702,6 +748,55 @@ router.get("/all", authMiddleware, checkPermission("attendance_management", "rea
   }
 });
 
+// 5.4 MISSING PUNCH IN / PUNCH OUT REPORT (Admin dashboard)
+router.get("/admin/missing-punch", authMiddleware, async (req, res) => {
+  try {
+    if (!isUserSuperAdmin(req)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const today = getISTToday();
+    await autoClosePastUnclosedAttendance(null, null, today);
+
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365);
+    const fromDate = new Date(today + "T00:00:00");
+    fromDate.setDate(fromDate.getDate() - days);
+    const from = req.query.from || fromDate.toISOString().slice(0, 10);
+    const to = req.query.to || today;
+
+    // Missing Out: auto clocked out by system (still unresolved). Missing In: clock-out recorded without a clock-in.
+    const [rows] = await pool.query(
+      `SELECT a.id, a.date, a.user_id, COALESCE(s.name, a.user_name) AS name,
+              a.clock_in, a.clock_out, a.auto_clock_out, a.status
+       FROM attendance a
+       LEFT JOIN staff s ON a.user_id = s.id OR (a.user_email = s.email AND a.user_email != '')
+       WHERE (s.status = 'Active' OR s.status IS NULL)
+         AND a.date BETWEEN ? AND ?
+         AND (
+           (a.clock_in IS NULL AND a.clock_out IS NOT NULL)
+           OR (a.clock_in IS NOT NULL AND (a.auto_clock_out = 1 OR a.status = 'Not Punch Out'))
+         )
+       ORDER BY a.date DESC, name ASC`,
+      [from, to]
+    );
+
+    res.json(rows.map(r => {
+      const missingIn = !r.clock_in;
+      return {
+        id: r.id,
+        date: r.date,
+        name: r.name || "Unknown",
+        punch_in: r.clock_in,
+        // Auto clock-out time is system-generated, so don't present it as a real punch out
+        punch_out: missingIn ? r.clock_out : null,
+        missing: missingIn ? "In" : "Out",
+      };
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 5.5 ADMIN CLOCK OUT AN EMPLOYEE
 router.put("/:id/clock-out", authMiddleware, async (req, res) => {
   try {
@@ -809,11 +904,65 @@ router.put("/schedules/:id", authMiddleware, checkPermission("attendance_managem
   }
 });
 
+// 9. GET ATTENDANCE SETTINGS (Monthly Late Instances, Grace Minutes, Half Day Cutoff)
+// NOTE: /settings routes must stay above PUT /:id, otherwise "/settings" is matched as an attendance id
+router.get("/settings", authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT * FROM attendance_settings WHERE id = 'default_settings' LIMIT 1");
+    if (rows.length > 0) {
+      res.json({
+        ...rows[0],
+        half_day_late_minutes: rows[0].half_day_late_minutes !== undefined && rows[0].half_day_late_minutes !== null ? rows[0].half_day_late_minutes : 120
+      });
+    } else {
+      res.json({ monthly_late_instances: 3, late_grace_minutes: 30, half_day_late_minutes: 120 });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 10. UPDATE ATTENDANCE SETTINGS (Admin only)
+router.put("/settings", authMiddleware, async (req, res) => {
+  try {
+    const isSuper = req.user.email === "gadanipranav@gmail.com" || req.user.role?.name === "Super Admin";
+    const isOwner = req.user.role?.name === "Company Owner";
+    if (!isSuper && !isOwner) {
+      return res.status(403).json({ error: "Only Admin can update attendance settings." });
+    }
+
+    const { monthly_late_instances, late_grace_minutes, half_day_late_minutes } = req.body;
+    const instances = parseInt(monthly_late_instances) >= 0 ? parseInt(monthly_late_instances) : 3;
+    const grace = parseInt(late_grace_minutes) >= 0 ? parseInt(late_grace_minutes) : 30;
+    const halfDay = parseInt(half_day_late_minutes) >= 0 ? parseInt(half_day_late_minutes) : 120;
+
+    await pool.query(
+      `INSERT INTO attendance_settings (id, monthly_late_instances, late_grace_minutes, half_day_late_minutes)
+       VALUES ('default_settings', ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         monthly_late_instances = VALUES(monthly_late_instances),
+         late_grace_minutes = VALUES(late_grace_minutes),
+         half_day_late_minutes = VALUES(half_day_late_minutes)`,
+      [instances, grace, halfDay]
+    );
+
+    res.json({
+      message: "Attendance settings updated successfully",
+      settings: { monthly_late_instances: instances, late_grace_minutes: grace, half_day_late_minutes: halfDay }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 6. UPDATE / REGULARIZE ATTENDANCE
 router.put("/:id", authMiddleware, checkPermission("attendance_management", "update"), async (req, res) => {
   try {
     const { id } = req.params;
-    let { status, total_hours, notes, is_regularized, work_mode, only_admin_clock_out, clock_in, clock_out } = req.body;
+    let { status, total_hours, notes, is_regularized, work_mode, only_admin_clock_out, clock_in, clock_out, clear_clock_out } = req.body;
+    // Admin removed the clock-out time (undo a mistaken clock-out): reopen the shift
+    const clearClockOut = Boolean(clear_clock_out) && !clock_out;
+    if (clearClockOut) total_hours = 0;
 
     if (clock_in && clock_out) {
       const inDate = new Date(clock_in);
@@ -825,13 +974,14 @@ router.put("/:id", authMiddleware, checkPermission("attendance_management", "upd
       total_hours = 0.00;
     }
 
-    await pool.query(
-      `UPDATE attendance 
-       SET status = COALESCE(?, status), 
+    const [result] = await pool.query(
+      `UPDATE attendance
+       SET status = COALESCE(?, status),
            total_hours = COALESCE(?, total_hours), 
            clock_in = COALESCE(?, clock_in),
-           clock_out = COALESCE(?, clock_out),
-           notes = COALESCE(?, notes), 
+           clock_out = IF(?, NULL, COALESCE(?, clock_out)),
+           auto_clock_out = IF(?, 0, auto_clock_out),
+           notes = COALESCE(?, notes),
            is_regularized = COALESCE(?, is_regularized),
            work_mode = COALESCE(?, work_mode),
            only_admin_clock_out = COALESCE(?, only_admin_clock_out)
@@ -840,8 +990,10 @@ router.put("/:id", authMiddleware, checkPermission("attendance_management", "upd
         status, 
         total_hours !== undefined ? total_hours : null, 
         clock_in || null,
+        clearClockOut ? 1 : 0,
         clock_out || null,
-        notes, 
+        clearClockOut ? 1 : 0,
+        notes,
         is_regularized, 
         work_mode, 
         only_admin_clock_out !== undefined ? (only_admin_clock_out ? 1 : 0) : null, 
@@ -849,6 +1001,9 @@ router.put("/:id", authMiddleware, checkPermission("attendance_management", "upd
       ]
     );
 
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Attendance record not found" });
+    }
     res.json({ message: "Attendance updated successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -858,12 +1013,26 @@ router.put("/:id", authMiddleware, checkPermission("attendance_management", "upd
 // 7. MANUAL ATTENDANCE ENTRY
 router.post("/manual", authMiddleware, checkPermission("attendance_management", "create"), async (req, res) => {
   try {
+    // Manual entries can be made for any employee, so only Admin / Company Owner may create them
+    if (!isUserSuperAdmin(req)) {
+      return res.status(403).json({ error: "Only Admin can add manual attendance." });
+    }
+
     const { user_id, user_name, user_email, date, clock_in, clock_out, status, work_mode, notes, only_admin_clock_out } = req.body;
     if (!user_id) {
       return res.status(400).json({ error: "Plese enter employee", field: "user_id" });
     }
     if (!date) {
       return res.status(400).json({ error: "Plese enter date", field: "date" });
+    }
+
+    // Don't silently overwrite an existing day - the existing record must be edited instead
+    const [dup] = await pool.query(
+      "SELECT id FROM attendance WHERE (user_id = ? OR (user_email = ? AND user_email != '')) AND date = ? LIMIT 1",
+      [user_id, user_email || "", date]
+    );
+    if (dup.length > 0) {
+      return res.status(409).json({ error: "Attendance already exists for this employee on this date. Please use Edit instead.", field: "date" });
     }
     let { total_hours } = req.body;
     const id = `att_manual_${Date.now()}`;
@@ -907,58 +1076,11 @@ router.post("/manual", authMiddleware, checkPermission("attendance_management", 
 // 8. DELETE ATTENDANCE ENTRY
 router.delete("/:id", authMiddleware, checkPermission("attendance_management", "delete"), async (req, res) => {
   try {
-    await pool.query("DELETE FROM attendance WHERE id = ?", [req.params.id]);
+    const [result] = await pool.query("DELETE FROM attendance WHERE id = ?", [req.params.id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Attendance record not found" });
+    }
     res.json({ message: "Attendance record deleted successfully" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 9. GET ATTENDANCE SETTINGS (Monthly Late Instances, Grace Minutes, Half Day Cutoff)
-router.get("/settings", authMiddleware, async (req, res) => {
-  try {
-    const [rows] = await pool.query("SELECT * FROM attendance_settings WHERE id = 'default_settings' LIMIT 1");
-    if (rows.length > 0) {
-      res.json({
-        ...rows[0],
-        half_day_late_minutes: rows[0].half_day_late_minutes !== undefined && rows[0].half_day_late_minutes !== null ? rows[0].half_day_late_minutes : 120
-      });
-    } else {
-      res.json({ monthly_late_instances: 3, late_grace_minutes: 30, half_day_late_minutes: 120 });
-    }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 10. UPDATE ATTENDANCE SETTINGS (Admin only)
-router.put("/settings", authMiddleware, async (req, res) => {
-  try {
-    const isSuper = req.user.email === "gadanipranav@gmail.com" || req.user.role?.name === "Super Admin";
-    const isOwner = req.user.role?.name === "Company Owner";
-    if (!isSuper && !isOwner) {
-      return res.status(403).json({ error: "Only Admin can update attendance settings." });
-    }
-
-    const { monthly_late_instances, late_grace_minutes, half_day_late_minutes } = req.body;
-    const instances = parseInt(monthly_late_instances) >= 0 ? parseInt(monthly_late_instances) : 3;
-    const grace = parseInt(late_grace_minutes) >= 0 ? parseInt(late_grace_minutes) : 30;
-    const halfDay = parseInt(half_day_late_minutes) >= 0 ? parseInt(half_day_late_minutes) : 120;
-
-    await pool.query(
-      `INSERT INTO attendance_settings (id, monthly_late_instances, late_grace_minutes, half_day_late_minutes)
-       VALUES ('default_settings', ?, ?, ?)
-       ON DUPLICATE KEY UPDATE 
-         monthly_late_instances = VALUES(monthly_late_instances), 
-         late_grace_minutes = VALUES(late_grace_minutes),
-         half_day_late_minutes = VALUES(half_day_late_minutes)`,
-      [instances, grace, halfDay]
-    );
-
-    res.json({ 
-      message: "Attendance settings updated successfully", 
-      settings: { monthly_late_instances: instances, late_grace_minutes: grace, half_day_late_minutes: halfDay } 
-    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -29,7 +29,9 @@ export default function Header({ onToggleMobileSidebar }) {
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [passwordLoading, setPasswordLoading] = useState(false);
-    const [passwordForm, setPasswordForm] = useState({ oldPassword: "", newPassword: "", confirmPassword: "" });
+    const [passwordForm, setPasswordForm] = useState({ newPassword: "", confirmPassword: "" });
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     const handleChangePassword = async (e) => {
         e.preventDefault();
@@ -44,12 +46,13 @@ export default function Header({ onToggleMobileSidebar }) {
         setPasswordLoading(true);
         try {
             await API.put("/staff/change-password", {
-                oldPassword: passwordForm.oldPassword,
                 newPassword: passwordForm.newPassword
             });
             showToast("Password changed successfully!", "success");
             setShowPasswordModal(false);
-            setPasswordForm({ oldPassword: "", newPassword: "", confirmPassword: "" });
+            setPasswordForm({ newPassword: "", confirmPassword: "" });
+            setShowNewPassword(false);
+            setShowConfirmPassword(false);
         } catch (err) {
             showToast(err.response?.data?.error || "Failed to change password", "error");
         } finally {
@@ -366,7 +369,7 @@ export default function Header({ onToggleMobileSidebar }) {
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '12px' }}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> My Profile
                                 </button>
 
-                                <button className="profile-dropdown__item" onClick={() => { setIsProfileOpen(false); setShowPasswordModal(true); setPasswordForm({ oldPassword: "", newPassword: "", confirmPassword: "" }); }}>
+                                <button className="profile-dropdown__item" onClick={() => { setIsProfileOpen(false); setShowPasswordModal(true); setPasswordForm({ newPassword: "", confirmPassword: "" }); setShowNewPassword(false); setShowConfirmPassword(false); }}>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '12px' }}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Change Password
                                 </button>
 
@@ -448,40 +451,96 @@ export default function Header({ onToggleMobileSidebar }) {
                             <button onClick={() => setShowPasswordModal(false)} style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--text-muted, #64748b)", display: "flex", alignItems: "center" }}><CloseIcon size={18} /></button>
                         </div>
                         <form onSubmit={handleChangePassword}>
-                            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                                <div>
-                                    <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "var(--text-muted, #64748b)", marginBottom: "6px" }}>Current Password</label>
-                                    <input
-                                        type="password"
-                                        required
-                                        value={passwordForm.oldPassword}
-                                        onChange={(e) => setPasswordForm({ ...passwordForm, oldPassword: e.target.value })}
-                                        className="form-control"
-                                        style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--ui-border, #cbd5e1)" }}
-                                    />
-                                </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                                 <div>
                                     <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "var(--text-muted, #64748b)", marginBottom: "6px" }}>New Password (min 6 characters)</label>
-                                    <input
-                                        type="password"
-                                        required
-                                        minLength={6}
-                                        value={passwordForm.newPassword}
-                                        onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                                        className="form-control"
-                                        style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--ui-border, #cbd5e1)" }}
-                                    />
+                                    <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                                        <input
+                                            type={showNewPassword ? "text" : "password"}
+                                            required
+                                            minLength={6}
+                                            value={passwordForm.newPassword}
+                                            onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                                            className="form-control"
+                                            placeholder="Enter new password"
+                                            style={{ width: "100%", padding: "10px 42px 10px 12px", borderRadius: "8px", border: "1px solid var(--ui-border, #cbd5e1)", outline: "none" }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowNewPassword(!showNewPassword)}
+                                            tabIndex={-1}
+                                            aria-label={showNewPassword ? "Hide password" : "Show password"}
+                                            style={{
+                                                position: "absolute",
+                                                right: "10px",
+                                                background: "none",
+                                                border: "none",
+                                                cursor: "pointer",
+                                                padding: "4px",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                color: "var(--text-muted, #94a3b8)"
+                                            }}
+                                        >
+                                            {showNewPassword ? (
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                                    <circle cx="12" cy="12" r="3" />
+                                                </svg>
+                                            ) : (
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                                                    <line x1="1" y1="1" x2="23" y2="23" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
                                 <div>
                                     <label style={{ display: "block", fontSize: "12px", fontWeight: "700", color: "var(--text-muted, #64748b)", marginBottom: "6px" }}>Confirm New Password</label>
-                                    <input
-                                        type="password"
-                                        required
-                                        value={passwordForm.confirmPassword}
-                                        onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                                        className="form-control"
-                                        style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--ui-border, #cbd5e1)" }}
-                                    />
+                                    <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                                        <input
+                                            type={showConfirmPassword ? "text" : "password"}
+                                            required
+                                            minLength={6}
+                                            value={passwordForm.confirmPassword}
+                                            onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                                            className="form-control"
+                                            placeholder="Re-enter new password"
+                                            style={{ width: "100%", padding: "10px 42px 10px 12px", borderRadius: "8px", border: "1px solid var(--ui-border, #cbd5e1)", outline: "none" }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                            tabIndex={-1}
+                                            aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                                            style={{
+                                                position: "absolute",
+                                                right: "10px",
+                                                background: "none",
+                                                border: "none",
+                                                cursor: "pointer",
+                                                padding: "4px",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                color: "var(--text-muted, #94a3b8)"
+                                            }}
+                                        >
+                                            {showConfirmPassword ? (
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                                    <circle cx="12" cy="12" r="3" />
+                                                </svg>
+                                            ) : (
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                                                    <line x1="1" y1="1" x2="23" y2="23" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "20px" }}>

@@ -43,15 +43,6 @@ exports.createProject = async (req, res) => {
       [projectId, name.trim(), description || "", status || "Active", JSON.stringify(assignedUsers)]
     );
 
-    // Send emails
-    for (const user of assignedUsers) {
-      if (user.email) {
-        try {
-          sendProjectMail(user.email, user.name, name, description || "");
-        } catch (e) {}
-      }
-    }
-
     res.status(201).json({
       _id: projectId,
       id: projectId,
@@ -195,6 +186,17 @@ exports.updateProject = async (req, res) => {
       return res.status(400).json({ error: "Plese enter project name", field: "name" });
     }
 
+    const [found] = await pool.query("SELECT id FROM projects WHERE id = ? LIMIT 1", [projectId]);
+    if (found.length === 0) return res.status(404).json({ error: "Project not found" });
+
+    // Prevent renaming to an existing project name (same rule as create)
+    if (name !== undefined) {
+      const [existing] = await pool.query("SELECT id FROM projects WHERE LOWER(name) = ? AND id != ? LIMIT 1", [name.trim().toLowerCase(), projectId]);
+      if (existing.length > 0) {
+        return res.status(409).json({ error: `A project with name '${name.trim()}' already exists!`, field: "name" });
+      }
+    }
+
     const assignedArray = Array.isArray(assignedTo) ? assignedTo : [];
     const assignedUsers = await getAssignedStaffObjects(assignedArray);
 
@@ -231,6 +233,15 @@ exports.updateProject = async (req, res) => {
 
 exports.deleteProject = async (req, res) => {
   try {
+    const [found] = await pool.query("SELECT id FROM projects WHERE id = ? LIMIT 1", [req.params.id]);
+    if (found.length === 0) return res.status(404).json({ error: "Project not found" });
+
+    // Refuse delete while tasks still reference this project (avoid orphaned tasks)
+    const [[{ count }]] = await pool.query("SELECT COUNT(*) AS count FROM tasks WHERE project = ?", [req.params.id]);
+    if (count > 0) {
+      return res.status(409).json({ error: `Project has ${count} tasks. Delete or move them first.`, count });
+    }
+
     await pool.query("DELETE FROM projects WHERE id = ?", [req.params.id]);
     res.json({ message: "Project deleted successfully" });
   } catch (err) {

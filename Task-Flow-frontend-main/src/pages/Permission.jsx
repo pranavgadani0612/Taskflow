@@ -126,7 +126,7 @@ export default function Permission() {
       load();
     } catch (error) {
       console.error("Error deleting permission:", error);
-      showToast("Error deleting permission", "error");
+      showToast(error.response?.data?.error || "Error deleting permission", "error");
     }
   };
 

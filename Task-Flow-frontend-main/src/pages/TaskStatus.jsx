@@ -145,7 +145,7 @@ export default function TaskStatus() {
       fetchStatus();
     } catch (error) {
       console.error("Error deleting task status:", error);
-      showToast("Error deleting task status", "error");
+      showToast(error.response?.data?.error || "Error deleting task status", "error");
     }
   };
 

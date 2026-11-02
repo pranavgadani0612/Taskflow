@@ -111,7 +111,7 @@ export default function CompanyList() {
       showToast("Company deleted successfully");
       loadCompanies();
     } catch (err) {
-      showToast("Error deleting company", "error");
+      showToast(err.response?.data?.error || "Error deleting company", "error");
     }
   };
 

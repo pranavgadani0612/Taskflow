@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import API from "../api/api";
+import { formatDuration } from "../utils/formatDuration";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { usePermissions } from "../contexts/PermissionContext";
@@ -131,14 +132,14 @@ export default function ClientInvoicing() {
         <div style={{ background: "var(--ui-surface, #ffffff)", border: "1px solid var(--ui-border, #e2e8f0)", borderRadius: "12px", padding: "1.25rem", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
           <div style={{ fontSize: "0.85rem", color: "var(--text-muted, #64748b)", fontWeight: "600", textTransform: "uppercase" }}>Total Billable Hours</div>
           <div style={{ fontSize: "1.8rem", fontWeight: "700", color: "#2563eb", marginTop: "0.25rem" }}>
-            {summary.total_billable_hours} hrs
+            {formatDuration(summary.total_billable_hours)}
           </div>
         </div>
 
         <div style={{ background: "var(--ui-surface, #ffffff)", border: "1px solid var(--ui-border, #e2e8f0)", borderRadius: "12px", padding: "1.25rem", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
           <div style={{ fontSize: "0.85rem", color: "var(--text-muted, #64748b)", fontWeight: "600", textTransform: "uppercase" }}>Internal / Non-Billable Hours</div>
           <div style={{ fontSize: "1.8rem", fontWeight: "700", color: "#64748b", marginTop: "0.25rem" }}>
-            {summary.total_non_billable_hours} hrs
+            {formatDuration(summary.total_non_billable_hours)}
           </div>
         </div>
 
@@ -201,10 +202,10 @@ export default function ClientInvoicing() {
                       ₹{c.hourly_rate} / hr ({c.currency || "INR"})
                     </td>
                     <td style={{ padding: "1rem", fontWeight: "700", color: "#059669" }}>
-                      {c.billable_hours} hrs
+                      {formatDuration(c.billable_hours)}
                     </td>
                     <td style={{ padding: "1rem", color: "#64748b" }}>
-                      {c.non_billable_hours} hrs
+                      {formatDuration(c.non_billable_hours)}
                     </td>
                     <td style={{ padding: "1rem", fontWeight: "800", color: "#0f172a", fontSize: "1.05rem" }}>
                       ₹{c.total_amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
@@ -338,7 +339,7 @@ export default function ClientInvoicing() {
                         <td style={{ padding: "0.55rem 0.8rem" }}>{it.date}</td>
                         <td style={{ padding: "0.55rem 0.8rem", fontWeight: "600" }}>{it.developer}</td>
                         <td style={{ padding: "0.55rem 0.8rem" }}>{it.task}</td>
-                        <td style={{ padding: "0.55rem 0.8rem", textAlign: "right", fontWeight: "600" }}>{it.hours} hrs</td>
+                        <td style={{ padding: "0.55rem 0.8rem", textAlign: "right", fontWeight: "600" }}>{formatDuration(it.hours)}</td>
                         <td style={{ padding: "0.55rem 0.8rem", textAlign: "right", fontWeight: "700" }}>₹{it.amount.toFixed(2)}</td>
                       </tr>
                     ))}
@@ -349,7 +350,7 @@ export default function ClientInvoicing() {
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <div style={{ width: "300px", fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>Subtotal ({invoiceModal.invoiceData.total_hours} hrs):</span>
+                      <span>Subtotal ({formatDuration(invoiceModal.invoiceData.total_hours)}):</span>
                       <strong>₹{invoiceModal.invoiceData.subtotal.toFixed(2)}</strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>

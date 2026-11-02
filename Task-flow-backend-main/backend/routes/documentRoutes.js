@@ -11,7 +11,7 @@ const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL || "gadanipranav@gmail.com
 
 // Multer disk storage for uploads with 50MB limit
 const storage = multer.diskStorage({
-  destination: "./uploads",
+  destination: require("../config/uploadDir"),
   filename: (req, file, cb) => {
     cb(null, Date.now() + path.extname(file.originalname));
   },
@@ -398,7 +398,26 @@ router.put("/:id", authMiddleware, upload.single("file"), async (req, res) => {
 // ================= DELETE DOCUMENT =================
 router.delete("/:id", authMiddleware, async (req, res) => {
   try {
+    const [rows] = await pool.query("SELECT file FROM documents WHERE id = ?", [req.params.id]);
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ error: "Document not found" });
+    }
     await pool.query("DELETE FROM documents WHERE id = ?", [req.params.id]);
+
+    // Remove the uploaded file too (same ./uploads dir multer writes to), unless another document still uses it.
+    // path.basename guards against path traversal via a stored filename.
+    const storedName = rows[0].file ? path.basename(String(rows[0].file)) : "";
+    if (storedName) {
+      const [others] = await pool.query("SELECT id FROM documents WHERE file = ? LIMIT 1", [rows[0].file]);
+      if (others.length === 0) {
+        try {
+          await require("fs").promises.unlink(path.join(require("../config/uploadDir"), storedName));
+        } catch (fileErr) {
+          if (fileErr.code !== "ENOENT") console.error("DELETE document file error:", fileErr);
+        }
+      }
+    }
+
     res.json({ message: "Document deleted" });
   } catch (err) {
     console.error("DELETE document error:", err);

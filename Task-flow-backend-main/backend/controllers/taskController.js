@@ -39,18 +39,6 @@ exports.createTask = async (req, res) => {
     // Populate before emitting
     const populated = await Task.findById(task._id).populate("assignedTo status project");
 
-    // 📩 Send email to assigned user
-    const staff = await Staff.findById(req.body.assignedTo);
-    if (staff?.email) {
-      await sendTaskOrIssueMail(
-        staff.email, 
-        task.title, 
-        task.description, 
-        staff.name, 
-        populated.status?.name || "Pending", 
-        task.type
-      );
-    }
 
     // ⚡ Emit real-time event to all connected clients
     const io = req.app.get("io");

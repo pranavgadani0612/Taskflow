@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import API from "../api/api";
+import { formatDuration } from "../utils/formatDuration";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useProject } from "../contexts/ProjectContext";
@@ -250,13 +251,19 @@ export default function Timesheet() {
     const row = dailyEntries[index];
     const errors = {};
     if (!row.hours || parseFloat(row.hours) <= 0) {
-      errors.hours = "Plese enter hours";
+      errors.hours = "Please enter hours";
     }
     if (!row.project_id) {
-      errors.project_id = "Plese enter project";
+      errors.project_id = "Please select project";
+    }
+    if (!row.task_id) {
+      errors.task_id = "Please select task";
+    }
+    if (!row.subtask_id) {
+      errors.subtask_id = "Please select sub task";
     }
     if (!row.description || !row.description.trim()) {
-      errors.description = "Plese enter description";
+      errors.description = "Please enter description";
     }
 
     if (Object.keys(errors).length > 0) {
@@ -302,15 +309,22 @@ export default function Timesheet() {
       const errMsg = e.response?.data?.error || e.message || "Save failed";
       let matchedField = false;
       if (errMsg.toLowerCase().includes("project")) {
-        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], project_id: "Plese enter project" } }));
+        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], project_id: "Please select project" } }));
+        matchedField = true;
+      }
+      if (errMsg.toLowerCase().includes("subtask") || errMsg.toLowerCase().includes("sub task")) {
+        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], subtask_id: "Please select sub task" } }));
+        matchedField = true;
+      } else if (errMsg.toLowerCase().includes("task")) {
+        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], task_id: "Please select task" } }));
         matchedField = true;
       }
       if (errMsg.toLowerCase().includes("hours")) {
-        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], hours: "Plese enter hours" } }));
+        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], hours: errMsg } }));
         matchedField = true;
       }
       if (errMsg.toLowerCase().includes("description")) {
-        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], description: "Plese enter description" } }));
+        setRowErrors(prev => ({ ...prev, [index]: { ...prev[index], description: "Please enter description" } }));
         matchedField = true;
       }
       if (!matchedField) {
@@ -344,6 +358,13 @@ export default function Timesheet() {
 
     if (dailyEntries.length === 0) {
       showToast("No timesheet entries to submit!", "warning");
+      return;
+    }
+
+    // Check for any missing project, task, or subtask before submission
+    const invalidEntry = dailyEntries.find(r => !r.project_id || !r.task_id || !r.subtask_id);
+    if (invalidEntry) {
+      showToast("Each timesheet entry must have a Project, Task, and Sub Task selected!", "error");
       return;
     }
 
@@ -504,7 +525,7 @@ export default function Timesheet() {
             padding: "5px 9px", borderRadius: "8px", fontWeight: "800", fontSize: "11px",
             whiteSpace: "nowrap"
           }}>
-            Total: {dayTotalHours.toFixed(2)} hrs
+            Total: {formatDuration(dayTotalHours)}
           </div>
 
           <button
@@ -673,10 +694,10 @@ export default function Timesheet() {
                       2. Project <span style={{ color: "#ef4444" }}>*</span>
                     </th>
                     <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", width: "180px", letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                      3. Task
+                      3. Task <span style={{ color: "#ef4444" }}>*</span>
                     </th>
                     <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", width: "170px", letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                      4. Sub Task
+                      4. Sub Task <span style={{ color: "#ef4444" }}>*</span>
                     </th>
                     <th style={{ padding: "12px 10px", fontSize: "11px", fontWeight: "700", color: "#64748b", minWidth: "200px", letterSpacing: "0.5px", textTransform: "uppercase" }}>
                       5. Description <span style={{ color: "#ef4444" }}>*</span>
@@ -792,12 +813,17 @@ export default function Timesheet() {
                           <select
                             disabled={isLocked}
                             value={row.task_id}
-                            onChange={(e) => handleRowFieldChange(idx, "task_id", e.target.value)}
+                            onChange={(e) => {
+                              handleRowFieldChange(idx, "task_id", e.target.value);
+                              if (err.task_id) {
+                                setRowErrors(prev => ({ ...prev, [idx]: { ...prev[idx], task_id: null } }));
+                              }
+                            }}
                             style={{
                               width: "100%", 
                               height: "38px",
                               padding: "0 10px", 
-                              border: "1px solid #d1d5db", 
+                              border: err.task_id ? "1.5px solid #ef4444" : "1px solid #d1d5db", 
                               borderRadius: "7px",
                               fontSize: "12.5px", 
                               color: "#1e293b", 
@@ -811,6 +837,11 @@ export default function Timesheet() {
                               <option key={t._id} value={t._id}>{t.title}</option>
                             ))}
                           </select>
+                          {err.task_id && (
+                            <div style={{ color: "#ef4444", fontSize: "11px", marginTop: "3px", fontWeight: "600" }}>
+                              {err.task_id}
+                            </div>
+                          )}
                         </td>
 
                         {/* 4. Sub Task */}
@@ -818,12 +849,17 @@ export default function Timesheet() {
                           <select
                             disabled={isLocked}
                             value={row.subtask_id}
-                            onChange={(e) => handleRowFieldChange(idx, "subtask_id", e.target.value)}
+                            onChange={(e) => {
+                              handleRowFieldChange(idx, "subtask_id", e.target.value);
+                              if (err.subtask_id) {
+                                setRowErrors(prev => ({ ...prev, [idx]: { ...prev[idx], subtask_id: null } }));
+                              }
+                            }}
                             style={{
                               width: "100%", 
                               height: "38px",
                               padding: "0 10px", 
-                              border: "1px solid #d1d5db", 
+                              border: err.subtask_id ? "1.5px solid #ef4444" : "1px solid #d1d5db", 
                               borderRadius: "7px",
                               fontSize: "12.5px", 
                               color: "#334155", 
@@ -837,6 +873,11 @@ export default function Timesheet() {
                               <option key={s._id} value={s._id}>{s.title}</option>
                             ))}
                           </select>
+                          {err.subtask_id && (
+                            <div style={{ color: "#ef4444", fontSize: "11px", marginTop: "3px", fontWeight: "600" }}>
+                              {err.subtask_id}
+                            </div>
+                          )}
                         </td>
 
                         {/* 5. Description */}
@@ -974,7 +1015,7 @@ export default function Timesheet() {
                     <td style={{ padding: "14px 12px", verticalAlign: "middle" }}>
                       <div style={{ display: "inline-flex", flexDirection: "column" }}>
                         <span style={{ fontSize: "14px", fontWeight: "800", color: "#1e293b", lineHeight: 1.2 }}>
-                          {dayTotalHours.toFixed(2)} hrs
+                          {formatDuration(dayTotalHours)}
                         </span>
                         <span style={{ fontSize: "11px", fontWeight: "600", color: "#64748b" }}>
                           Total Logged
@@ -1113,7 +1154,7 @@ export default function Timesheet() {
                           {ts.date ? new Date(ts.date).toLocaleDateString('en-GB') : "—"}
                         </td>
                         <td style={{ padding: "12px 16px", fontWeight: "800", color: "#0f172a" }}>
-                          <span style={{ background: "#f1f5f9", padding: "4px 8px", borderRadius: "6px" }}>{ts.hours} hrs</span>
+                          <span style={{ background: "#f1f5f9", padding: "4px 8px", borderRadius: "6px" }}>{formatDuration(ts.hours)}</span>
                         </td>
                         <td style={{ padding: "12px 16px", fontWeight: "700", color: "#4f46e5" }}>
                           {ts.project_name}
@@ -1192,7 +1233,7 @@ export default function Timesheet() {
                   <div style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>{p.log_count} Timesheet Entries Submitted</div>
                 </div>
                 <div style={{ background: "#eef2ff", color: "#4f46e5", padding: "6px 12px", borderRadius: "8px", fontWeight: "800", fontSize: "15px" }}>
-                  {p.total_hours} hrs
+                  {formatDuration(p.total_hours)}
                 </div>
               </div>
 
@@ -1206,7 +1247,7 @@ export default function Timesheet() {
                 }} />
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#94a3b8", marginTop: "6px" }}>
-                <span>Burned: {p.total_hours} hrs</span>
+                <span>Burned: {formatDuration(p.total_hours)}</span>
                 <span>Budget: 100 hrs</span>
               </div>
             </div>

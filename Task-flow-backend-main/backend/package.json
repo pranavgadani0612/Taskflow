@@ -1,0 +1,36 @@
+{
+  "name": "taskmanager",
+  "version": "1.0.0",
+  "description": "��#\u0000 \u0000T\u0000a\u0000s\u0000k\u0000M\u0000a\u0000n\u0000a\u0000g\u0000e\u0000r\u0000\r\u0000 \u0000",
+  "main": "index.js",
+  "scripts": {
+    "start": "node --max-old-space-size=4096 server.js",
+    "dev": "nodemon --max-old-space-size=4096 server.js",
+    "start:bulk": "node --max-old-space-size=8192 server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cores": "^0.8.5",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "fast-csv": "^5.0.5",
+    "jsonwebtoken": "^9.0.3",
+    "mongodb-memory-server": "^11.3.0",
+    "mongoose": "^9.2.2",
+    "multer": "^2.0.2",
+    "mysql2": "^3.24.6",
+    "nodemailer": "^8.0.1",
+    "sequelize": "^6.37.8",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5"
+  }
+}

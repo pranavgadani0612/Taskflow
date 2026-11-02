@@ -55,19 +55,28 @@ router.post("/test-cases", authMiddleware, async (req, res) => {
 // 3. EXECUTE / UPDATE TEST CASE (Pass, Fail, Blocked)
 router.put("/test-cases/:id", authMiddleware, async (req, res) => {
   try {
-    const { status, actual_result, title, steps, expected_result, severity } = req.body;
+    const { status, actual_result, title, steps, expected_result, severity, module_name, preconditions, project_id, project_name } = req.body;
+    if (title !== undefined && (typeof title !== "string" || !title.trim())) {
+      return res.status(400).json({ error: "Plese enter test case title" });
+    }
 
-    await pool.query(
-      `UPDATE test_cases 
+    const [result] = await pool.query(
+      `UPDATE test_cases
        SET status = COALESCE(?, status),
            actual_result = COALESCE(?, actual_result),
            title = COALESCE(?, title),
            steps = COALESCE(?, steps),
            expected_result = COALESCE(?, expected_result),
-           severity = COALESCE(?, severity)
+           severity = COALESCE(?, severity),
+           module_name = COALESCE(?, module_name),
+           preconditions = COALESCE(?, preconditions),
+           project_id = COALESCE(?, project_id),
+           project_name = COALESCE(?, project_name)
        WHERE id = ?`,
-      [status, actual_result, title, steps, expected_result, severity, req.params.id]
+      [status, actual_result, title !== undefined ? title.trim() : undefined, steps, expected_result, severity,
+        module_name, preconditions, project_id, project_name, req.params.id]
     );
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Test case not found" });
 
     const [updated] = await pool.query("SELECT * FROM test_cases WHERE id = ?", [req.params.id]);
     res.json(updated[0]);
@@ -143,17 +152,28 @@ router.post("/bugs", authMiddleware, async (req, res) => {
 // 7. UPDATE BUG STATUS (Open -> In Fixing -> Resolved -> Retest -> Closed)
 router.put("/bugs/:id", authMiddleware, async (req, res) => {
   try {
-    const { status, severity, assigned_to, description } = req.body;
+    const { status, severity, assigned_to, description, title, steps_to_reproduce, environment, project_id, project_name, test_case_id } = req.body;
+    if (title !== undefined && (typeof title !== "string" || !title.trim())) {
+      return res.status(400).json({ error: "Plese enter bug title" });
+    }
 
-    await pool.query(
-      `UPDATE qa_bugs 
+    const [result] = await pool.query(
+      `UPDATE qa_bugs
        SET status = COALESCE(?, status),
            severity = COALESCE(?, severity),
            assigned_to = COALESCE(?, assigned_to),
-           description = COALESCE(?, description)
+           description = COALESCE(?, description),
+           title = COALESCE(?, title),
+           steps_to_reproduce = COALESCE(?, steps_to_reproduce),
+           environment = COALESCE(?, environment),
+           project_id = COALESCE(?, project_id),
+           project_name = COALESCE(?, project_name),
+           test_case_id = COALESCE(?, test_case_id)
        WHERE id = ?`,
-      [status, severity, assigned_to, description, req.params.id]
+      [status, severity, assigned_to, description, title !== undefined ? title.trim() : undefined,
+        steps_to_reproduce, environment, project_id, project_name, test_case_id, req.params.id]
     );
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Bug not found" });
 
     const [updated] = await pool.query("SELECT * FROM qa_bugs WHERE id = ?", [req.params.id]);
     res.json(updated[0]);

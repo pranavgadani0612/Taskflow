@@ -166,15 +166,23 @@ router.put("/:id/status", authMiddleware, async (req, res) => {
     if (!status) {
       return res.status(400).json({ error: "Status is required." });
     }
+    // Same statuses the Tickets UI offers
+    const ALLOWED_STATUSES = ["Open", "In Progress", "Resolved", "Closed"];
+    if (!ALLOWED_STATUSES.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Allowed: ${ALLOWED_STATUSES.join(", ")}.` });
+    }
 
     const resolvedAt = status === "Resolved" || status === "Closed" ? new Date() : null;
 
-    await pool.query(
+    const [result] = await pool.query(
       `UPDATE internal_tickets 
        SET status = ?, admin_remarks = COALESCE(?, admin_remarks), assigned_to = COALESCE(?, assigned_to), resolved_at = ?
        WHERE id = ?`,
       [status, admin_remarks || null, assigned_to || req.user?.name || null, resolvedAt, id]
     );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Ticket not found." });
+    }
 
     const [[updatedTicket]] = await pool.query("SELECT * FROM internal_tickets WHERE id = ?", [id]);
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import API from "../api/api";
+import { formatDuration } from "../utils/formatDuration";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { IconAlert } from "../components/common/Icons";
@@ -753,10 +754,10 @@ export default function TimeManager() {
                         {att?.clock_in ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                             <div style={{ fontWeight: "700", color: "var(--text-main, #0f172a)", fontSize: "12.5px" }}>
-                              {att.total_hours ? `${att.total_hours} hrs` : "In Progress"}
+                              {att.total_hours ? formatDuration(att.total_hours) : "In Progress"}
                             </div>
                             <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)" }}>
-                              Break: {rec.break_minutes ? `${rec.break_minutes} mins` : "0 mins"}
+                              Break: {formatDuration((rec.break_minutes || 0) / 60)}
                             </div>
                           </div>
                         ) : (

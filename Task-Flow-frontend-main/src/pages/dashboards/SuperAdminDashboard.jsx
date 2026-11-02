@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useSocket } from "../../contexts/SocketContext";
 import API from "../../api/api";
+import { formatDuration } from "../../utils/formatDuration";
 import { UsersIcon, FolderIcon, ZapIcon, TicketIcon, BugIcon } from "../../components/common/Icons";
 import CelebrationsWidget from "../../components/common/CelebrationsWidget";
 import "../../style/main.css";
@@ -22,23 +23,82 @@ export default function SuperAdminDashboard() {
     openTicketsCount: 0,
   });
 
-  const [companyDetails, setCompanyDetails] = useState(null);
-  const [recentActivity, setRecentActivity] = useState([]);
+  const [missingPunches, setMissingPunches] = useState([]);
+  const [missingLoading, setMissingLoading] = useState(true);
+  const [missingDate, setMissingDate] = useState(getYesterday);
+  const [pendingApprovals, setPendingApprovals] = useState({ leaves: [], shortLeaves: [] });
+  const [dailyHours, setDailyHours] = useState([]);
+  const [dailyHoursDate, setDailyHoursDate] = useState(getYesterday);
+  const [upcomingLeaves, setUpcomingLeaves] = useState([]);
+
+  const loadDailyHours = useCallback(async () => {
+    try {
+      const res = await API.get("/timesheets/admin/daily-hours", {
+        params: dailyHoursDate ? { date: dailyHoursDate } : {},
+      });
+      setDailyHours(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      setDailyHours([]);
+    }
+  }, [dailyHoursDate]);
+
+  useEffect(() => {
+    loadDailyHours();
+  }, [loadDailyHours]);
+
+  const loadMissingPunches = useCallback(async () => {
+    setMissingLoading(true);
+    try {
+      const res = await API.get("/attendance/admin/missing-punch", {
+        params: missingDate ? { from: missingDate, to: missingDate } : {},
+      });
+      setMissingPunches(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      setMissingPunches([]);
+    } finally {
+      setMissingLoading(false);
+    }
+  }, [missingDate]);
+
+  useEffect(() => {
+    loadMissingPunches();
+  }, [loadMissingPunches]);
 
   const loadSuperAdminData = useCallback(async () => {
     setLoading(true);
     try {
-      const [companiesRes, staffRes, projectsRes, tasksRes, ticketsRes] = await Promise.allSettled([
-        API.get("/companies"),
+      const [staffRes, projectsRes, tasksRes, ticketsRes, leavesRes, shortLeavesRes, upcomingRes] = await Promise.allSettled([
         API.get("/staff"),
         API.get("/projects"),
         API.get("/tasks"),
         API.get("/tickets/stats"),
+        API.get("/leave/all", { params: { status: "Pending" } }),
+        API.get("/leave/short-leaves/all"),
+        API.get("/leave/all", { params: { upcomingDays: 10 } }),
       ]);
 
-      const compData = companiesRes.status === "fulfilled" && Array.isArray(companiesRes.value.data)
-        ? companiesRes.value.data
+      const pendingLeaves = leavesRes.status === "fulfilled" && Array.isArray(leavesRes.value.data)
+        ? leavesRes.value.data
         : [];
+      const pendingShortLeaves = shortLeavesRes.status === "fulfilled" && Array.isArray(shortLeavesRes.value.data)
+        ? shortLeavesRes.value.data.filter(sl => sl.status === "Pending")
+        : [];
+      setPendingApprovals({ leaves: pendingLeaves, shortLeaves: pendingShortLeaves });
+
+      const upcoming = upcomingRes.status === "fulfilled" && Array.isArray(upcomingRes.value.data)
+        ? upcomingRes.value.data.filter(ul => {
+            if (ul.status !== "Approved") return false;
+            const fromD = String(ul.from_date || "").slice(0, 10);
+            const toD = String(ul.to_date || "").slice(0, 10);
+            const now = new Date();
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+            const maxD = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 10);
+            const maxDStr = `${maxD.getFullYear()}-${String(maxD.getMonth() + 1).padStart(2, "0")}-${String(maxD.getDate()).padStart(2, "0")}`;
+            return toD >= todayStr && fromD <= maxDStr;
+          })
+        : [];
+      setUpcomingLeaves(upcoming);
+
       const staffData = staffRes.status === "fulfilled"
         ? (Array.isArray(staffRes.value.data) ? staffRes.value.data : staffRes.value.data?.staff || [])
         : [];
@@ -52,17 +112,6 @@ export default function SuperAdminDashboard() {
         ? ticketsRes.value.data
         : { open: 0 };
 
-      // Find Padya Soft company record or default to the primary company
-      const padyaSoft = compData.find(c => 
-        (c.companyName || "").toLowerCase().includes("padya")
-      ) || compData[0] || {
-        companyName: "Padya Soft",
-        contactPersonEmail: user?.email || "gadanipranav@gmail.com",
-        status: "Active"
-      };
-
-      setCompanyDetails(padyaSoft);
-
       const issueCount = taskData.filter(t => t.type === "issue").length;
       const activeStaffCount = staffData.filter(s => (s.status || "Active").toLowerCase() === "active").length;
 
@@ -73,20 +122,6 @@ export default function SuperAdminDashboard() {
         issuesCount: issueCount,
         openTicketsCount: ticketStats.open || 0,
       });
-
-      // Construct live audit/event timeline from recent tasks
-      const recentTaskEvents = [...taskData]
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        .slice(0, 5)
-        .map(t => ({
-          id: t._id || t.id,
-          title: `Task "${t.title || 'Untitled'}" was updated`,
-          category: t.type === "issue" ? "Incident / Bug" : "Task",
-          time: t.createdAt ? new Date(t.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now",
-          badgeColor: t.type === "issue" ? "#ef4444" : "#10b981",
-        }));
-
-      setRecentActivity(recentTaskEvents);
     } catch (err) {
       console.error("Super Admin dashboard error:", err);
     } finally {
@@ -114,350 +149,327 @@ export default function SuperAdminDashboard() {
 
   return (
     <div style={{ padding: "10px 0 40px 0", maxWidth: "1400px", margin: "0 auto" }}>
-      {/* PADYA SOFT SUPER ADMIN HERO BANNER */}
+      {/* 1. MISSING PUNCH & DAILY REPORT HOURS != 9 (FIRST SECTION) */}
       <div
         style={{
-          background: "linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%)",
-          borderRadius: "24px",
-          padding: "32px",
-          marginBottom: "32px",
-          color: "#fff",
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "space-between",
-          alignItems: "center",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
           gap: "24px",
-          boxShadow: "0 20px 40px -15px rgba(15, 23, 42, 0.4)",
-          border: "1px solid rgba(99, 102, 241, 0.2)",
-          position: "relative",
-          overflow: "hidden",
+          marginBottom: "24px",
         }}
       >
-        <div style={{ position: "relative", zIndex: 1, maxWidth: "650px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-            <span
-              style={{
-                fontSize: "11px",
-                fontWeight: "900",
-                letterSpacing: "1.5px",
-                padding: "4px 12px",
-                borderRadius: "20px",
-                background: "rgba(129, 140, 248, 0.2)",
-                color: "#c7d2fe",
-                border: "1px solid rgba(129, 140, 248, 0.3)",
-              }}
-            >
-              PADYA SOFT • SUPER ADMIN
-            </span>
-            <span style={{ fontSize: "12px", color: "#94a3b8" }}>
-              Enterprise Workspace Control
-            </span>
-          </div>
-
-          <h1 style={{ margin: "0 0 8px 0", fontSize: "28px", fontWeight: "900", letterSpacing: "-0.5px" }}>
-            Padya Soft Control Center
-          </h1>
-          <p style={{ margin: 0, color: "#94a3b8", fontSize: "14px", lineHeight: "1.6" }}>
-            Manage staff members, active project lifecycles, and operations across Padya Soft from one unified dashboard.
-          </p>
+        {/* MISSING PUNCH IN / PUNCH OUT REPORT */}
+        <div style={panelStyle}>
+          <PanelHeader
+            title="Missing Punch In / Punch Out Report"
+            subtitle={missingDate ? "Unresolved records for selected date" : "Last 30 days, unresolved records"}
+            action={
+              <input
+                type="date"
+                value={missingDate}
+                onChange={(e) => setMissingDate(e.target.value)}
+                style={dateInputStyle}
+              />
+            }
+          />
+          <ReportTable
+            loading={missingLoading}
+            emptyText="No missing punches found."
+            columns={["Date", "Name", "Punch In", "Punch Out", "Missing In/Out"]}
+            rows={missingPunches.map(r => ({
+              key: r.id,
+              cells: [
+                formatDate(r.date),
+                r.name,
+                formatTime(r.punch_in),
+                formatTime(r.punch_out),
+                <StatusPill key="m" text={`Missing ${r.missing}`} color="#ef4444" />,
+              ],
+            }))}
+          />
         </div>
 
-        {/* QUICK ADMIN ACTIONS */}
-        <div
-          style={{
-            position: "relative",
-            zIndex: 1,
-            display: "flex",
-            alignItems: "center",
-            gap: "12px",
-            flexWrap: "wrap",
-          }}
-        >
-          <button
-            onClick={() => navigate("/staff")}
-            style={{
-              background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-              color: "#fff",
-              border: "none",
-              padding: "12px 20px",
-              borderRadius: "12px",
-              fontWeight: "700",
-              fontSize: "13px",
-              cursor: "pointer",
-              boxShadow: "0 4px 14px rgba(79, 70, 229, 0.35)",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-            }}
-          >
-            <UsersIcon size={16} color="#fff" /> Manage Staff
-          </button>
-          <button
-            onClick={() => navigate("/project")}
-            style={{
-              background: "rgba(255, 255, 255, 0.1)",
-              color: "#fff",
-              border: "1px solid rgba(255, 255, 255, 0.2)",
-              padding: "12px 20px",
-              borderRadius: "12px",
-              fontWeight: "700",
-              fontSize: "13px",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-            }}
-          >
-            <FolderIcon size={16} color="#fff" /> Projects
-          </button>
+        {/* DAILY REPORT HOURS != 9 */}
+        <div style={panelStyle}>
+          <PanelHeader
+            title="Daily Report (Employee)"
+            subtitle={dailyHoursDate ? "Logged hours less or greater than 9" : "Last 7 days, logged hours less or greater than 9"}
+            action={
+              <input
+                type="date"
+                value={dailyHoursDate}
+                onChange={(e) => setDailyHoursDate(e.target.value)}
+                style={dateInputStyle}
+              />
+            }
+          />
+          <ReportTable
+            loading={false}
+            emptyText="All daily reports are exactly 9 hours."
+            columns={["Date", "Name", "Hours", "Less / More"]}
+            rows={dailyHours.map(r => ({
+              key: `${r.date}-${r.user_id}`,
+              cells: [
+                formatDate(r.date),
+                r.name,
+                formatDuration(r.hours),
+                <StatusPill
+                  key="f"
+                  text={`${r.flag} (${r.difference > 0 ? "+" : ""}${formatDuration(r.difference)})`}
+                  color={r.flag === "Less" ? "#ef4444" : "#f59e0b"}
+                />,
+              ],
+            }))}
+          />
         </div>
       </div>
 
-      {/* PADYA SOFT STATS */}
+      {/* 2. PENDING LEAVE / SHORT LEAVE APPROVALS (SECOND SECTION) */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-          gap: "20px",
-          marginBottom: "32px",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
+          gap: "24px",
+          marginBottom: "24px",
         }}
       >
-        <AdminStatCard
-          title="Total Staff"
-          value={metrics.staffCount}
-          subtitle="Padya Soft team members"
-          color="#06b6d4"
-          icon={<UsersIcon size={22} color="#06b6d4" />}
-          loading={loading}
-          onClick={() => navigate("/staff")}
-        />
-        <AdminStatCard
-          title="Active Projects"
-          value={metrics.projectsCount}
-          subtitle="Running project pipelines"
-          color="#10b981"
-          icon={<FolderIcon size={22} color="#10b981" />}
-          loading={loading}
-          onClick={() => navigate("/project")}
-        />
-        <AdminStatCard
-          title="Total Tasks"
-          value={metrics.tasksCount}
-          subtitle="Assigned work operations"
-          color="#6366f1"
-          icon={<ZapIcon size={22} color="#6366f1" />}
-          loading={loading}
-          onClick={() => navigate("/task")}
-        />
-        <AdminStatCard
-          title="Open Tickets"
-          value={metrics.openTicketsCount}
-          subtitle="Hardware / IT requests"
-          color="#f59e0b"
-          icon={<TicketIcon size={22} color="#f59e0b" />}
-          loading={loading}
-          onClick={() => navigate("/tickets")}
-        />
+        <div style={panelStyle}>
+          <PanelHeader
+            title={`Pending Leave Approval (${loading ? "..." : pendingApprovals.leaves.length})`}
+            subtitle="Employees waiting for leave approval"
+            action={<ReviewButton onClick={() => navigate("/leave")} />}
+          />
+          <ReportTable
+            loading={loading}
+            emptyText="No pending leave requests."
+            columns={["Name", "Leave Type", "From", "To", "Days"]}
+            rows={pendingApprovals.leaves.map(l => ({
+              key: l.id,
+              cells: [
+                l.user_name || l.user_email || "Unknown",
+                <StatusPill key="t" text={l.leave_type || "Leave"} color="#6366f1" />,
+                formatDate(l.from_date),
+                formatDate(l.to_date),
+                `${parseFloat(l.total_days || 0)}${l.day_type && l.day_type !== "Full Day" ? ` (${l.day_type})` : ""}`,
+              ],
+            }))}
+          />
+        </div>
+
+        <div style={panelStyle}>
+          <PanelHeader
+            title={`Pending Short Leave Approval (${loading ? "..." : pendingApprovals.shortLeaves.length})`}
+            subtitle="Employees waiting for short leave approval"
+            action={<ReviewButton onClick={() => navigate("/leave")} />}
+          />
+          <ReportTable
+            loading={loading}
+            emptyText="No pending short leave requests."
+            columns={["Name", "Date", "Time", "Hours"]}
+            rows={pendingApprovals.shortLeaves.map(sl => ({
+              key: sl.id,
+              cells: [
+                sl.user_name || sl.user_email || "Unknown",
+                formatDate(sl.date),
+                `${formatClock(sl.from_time)} - ${formatClock(sl.to_time)}`,
+                formatDuration(sl.hours),
+              ],
+            }))}
+          />
+        </div>
       </div>
 
-      {/* PADYA SOFT PROFILE OVERVIEW & LIVE ACTIVITY */}
+      {/* 3. FUTURE LEAVES (UPCOMING 10 DAYS) & TEAM CELEBRATIONS (THIRD SECTION) */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
           gap: "24px",
           marginBottom: "32px",
         }}
       >
-        {/* LEFT COLUMN: COMPANY PROFILE & CELEBRATIONS */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          {/* COMPANY PROFILE DETAILS */}
-          <div
-            style={{
-              background: "var(--ui-surface, #ffffff)",
-              borderRadius: "20px",
-              padding: "clamp(16px, 3vw, 24px)",
-              border: "1px solid var(--ui-border, #e2e8f0)",
-              boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <div>
-                <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: "800", color: "var(--text-main, #1e293b)" }}>
-                  Organization Profile
-                </h3>
-                <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)" }}>
-                  Padya Soft internal workspace
-                </span>
-              </div>
-              <span
+        <div style={panelStyle}>
+          <PanelHeader
+            title={`Upcoming Leaves - Next 10 Days (${loading ? "..." : upcomingLeaves.length})`}
+            subtitle="Employees scheduled for leave in the upcoming 10 days"
+            action={<ReviewButton onClick={() => navigate("/leave")} />}
+          />
+          <ReportTable
+            loading={loading}
+            emptyText="No upcoming leaves scheduled in the next 10 days."
+            columns={["Name", "Leave Type", "From", "To", "Days", "Status"]}
+            rows={upcomingLeaves.map(ul => ({
+              key: ul.id,
+              cells: [
+                ul.user_name || ul.user_email || "Unknown",
+                <StatusPill key="t" text={ul.leave_type || "Leave"} color="#6366f1" />,
+                formatDate(ul.from_date),
+                formatDate(ul.to_date),
+                `${parseFloat(ul.total_days || 0)}${ul.day_type && ul.day_type !== "Full Day" ? ` (${ul.day_type})` : ""}`,
+                <StatusPill
+                  key="s"
+                  text={ul.status || "Pending"}
+                  color={ul.status === "Approved" ? "#10b981" : ul.status === "Pending" ? "#f59e0b" : "#ef4444"}
+                />,
+              ],
+            }))}
+          />
+        </div>
+
+        {/* TEAM CELEBRATIONS WIDGET */}
+        <CelebrationsWidget />
+      </div>
+    </div>
+  );
+}
+
+const panelStyle = {
+  background: "var(--ui-surface, #ffffff)",
+  borderRadius: "20px",
+  padding: "clamp(16px, 3vw, 24px)",
+  border: "1px solid var(--ui-border, #e2e8f0)",
+  boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05)",
+  minWidth: 0,
+};
+
+// Yesterday as local "YYYY-MM-DD" (default for the report date filters)
+const getYesterday = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+const dateInputStyle = {
+  padding: "6px 10px",
+  borderRadius: "8px",
+  border: "1px solid var(--ui-border, #e2e8f0)",
+  background: "var(--ui-surface, #ffffff)",
+  color: "var(--text-main, #1e293b)",
+  fontSize: "12px",
+};
+
+// Dates arrive as "YYYY-MM-DD" and datetimes as "YYYY-MM-DD HH:mm:ss" (mysql dateStrings)
+const formatDate = (d) => {
+  if (!d) return "-";
+  const [y, m, day] = String(d).slice(0, 10).split("-");
+  return `${day}-${m}-${y}`;
+};
+
+// "HH:mm" -> "hh:mm AM/PM"
+const formatClock = (t) => {
+  if (!t) return "-";
+  const [h, m] = String(t).slice(0, 5).split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return "-";
+  return `${String(h % 12 || 12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+};
+
+const formatTime = (dt) => (dt ? formatClock(String(dt).slice(11, 16)) : "-");
+
+function PanelHeader({ title, subtitle, action }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
+      <div>
+        <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: "800", color: "var(--text-main, #1e293b)" }}>{title}</h3>
+        <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)" }}>{subtitle}</span>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function ReviewButton({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "6px 14px",
+        borderRadius: "8px",
+        border: "1px solid var(--ui-border, #e2e8f0)",
+        background: "var(--ui-bg, #f8fafc)",
+        color: "#6366f1",
+        fontSize: "12px",
+        fontWeight: "700",
+        cursor: "pointer",
+      }}
+    >
+      Review
+    </button>
+  );
+}
+
+function StatusPill({ text, color }) {
+  return (
+    <span
+      style={{
+        fontSize: "11px",
+        fontWeight: "700",
+        padding: "3px 10px",
+        borderRadius: "8px",
+        background: `${color}1a`,
+        color,
+        border: `1px solid ${color}33`,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+function ReportTable({ columns, rows, loading, emptyText }) {
+  if (loading) {
+    return <div style={{ textAlign: "center", padding: "30px", color: "var(--text-muted, #64748b)" }}>Loading...</div>;
+  }
+  if (rows.length === 0) {
+    return <div style={{ textAlign: "center", padding: "30px", color: "var(--text-muted, #64748b)", fontSize: "13px" }}>{emptyText}</div>;
+  }
+  return (
+    <div style={{ maxHeight: "360px", overflow: "auto", borderRadius: "12px", border: "1px solid var(--ui-border, #e2e8f0)" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+        <thead>
+          <tr>
+            {columns.map(c => (
+              <th
+                key={c}
                 style={{
+                  position: "sticky",
+                  top: 0,
+                  textAlign: "left",
+                  padding: "10px 12px",
                   fontSize: "11px",
-                  fontWeight: "700",
-                  padding: "4px 10px",
-                  borderRadius: "8px",
-                  background: "rgba(16, 185, 129, 0.1)",
-                  color: "#10b981",
-                  border: "1px solid rgba(16, 185, 129, 0.2)",
+                  fontWeight: "800",
+                  textTransform: "uppercase",
+                  color: "var(--text-muted, #64748b)",
+                  background: "var(--ui-bg, #f8fafc)",
+                  borderBottom: "1px solid var(--ui-border, #e2e8f0)",
+                  whiteSpace: "nowrap",
                 }}
               >
-                Active
-              </span>
-            </div>
-
-            <div
-              style={{
-                padding: "clamp(14px, 2.5vw, 20px)",
-                borderRadius: "16px",
-                background: "var(--ui-bg, #f8fafc)",
-                border: "1px solid var(--ui-border, #e2e8f0)",
-                display: "flex",
-                flexDirection: "column",
-                gap: "14px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                <div
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.key}>
+              {r.cells.map((cell, i) => (
+                <td
+                  key={i}
                   style={{
-                    width: "48px",
-                    height: "48px",
-                    borderRadius: "14px",
-                    background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-                    color: "#fff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "20px",
-                    fontWeight: "900",
-                    flexShrink: 0,
+                    padding: "10px 12px",
+                    borderBottom: "1px solid var(--ui-border, #e2e8f0)",
+                    color: "var(--text-main, #1e293b)",
+                    whiteSpace: i === 1 ? "normal" : "nowrap",
                   }}
                 >
-                  PS
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: "16px", fontWeight: "800", color: "var(--text-main, #1e293b)", wordBreak: "break-word" }}>
-                    {companyDetails?.companyName || "Padya Soft"}
-                  </div>
-                  <div style={{ fontSize: "12px", color: "var(--text-muted, #64748b)", marginTop: "2px" }}>
-                    Primary Workspace Organization
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 140px), 1fr))", gap: "12px", marginTop: "4px" }}>
-                <div style={{ padding: "12px", background: "var(--ui-surface, #ffffff)", borderRadius: "10px", border: "1px solid var(--ui-border, #e2e8f0)", minWidth: 0 }}>
-                  <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)", fontWeight: "700" }}>CONTACT EMAIL</div>
-                  <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-main, #1e293b)", marginTop: "3px", wordBreak: "break-all" }}>
-                    {companyDetails?.contactPersonEmail || companyDetails?.email || user?.email || "gadanipranav@gmail.com"}
-                  </div>
-                </div>
-                <div style={{ padding: "12px", background: "var(--ui-surface, #ffffff)", borderRadius: "10px", border: "1px solid var(--ui-border, #e2e8f0)", minWidth: 0 }}>
-                  <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)", fontWeight: "700" }}>PHONE / CONTACT</div>
-                  <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-main, #1e293b)", marginTop: "3px", wordBreak: "break-word" }}>
-                    {companyDetails?.phone || companyDetails?.contactPersonPhone || "+91 98765 43210"}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* TEAM CELEBRATIONS WIDGET */}
-          <CelebrationsWidget />
-        </div>
-
-        {/* SYSTEM AUDIT & ACTIVITY FEED */}
-        <div
-
-          style={{
-            background: "var(--ui-surface, #ffffff)",
-            borderRadius: "20px",
-            padding: "clamp(16px, 3vw, 24px)",
-            border: "1px solid var(--ui-border, #e2e8f0)",
-            boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.05)",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-            <div>
-              <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: "800", color: "var(--text-main, #1e293b)" }}>
-                Live Activity Feed
-              </h3>
-              <span style={{ fontSize: "12px", color: "var(--text-muted, #64748b)" }}>
-                Recent Padya Soft tasks and updates
-              </span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#10b981" }}></span>
-              <span style={{ fontSize: "11px", fontWeight: "700", color: "#10b981" }}>LIVE</span>
-            </div>
-          </div>
-
-          {recentActivity.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-muted, #64748b)" }}>
-              No recent task activity recorded yet.
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {recentActivity.map((evt) => (
-                <div
-                  key={evt.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    justifyContent: "space-between",
-                    gap: "12px",
-                    padding: "12px 14px",
-                    borderRadius: "12px",
-                    background: "var(--ui-bg, #f8fafc)",
-                    border: "1px solid var(--ui-border, #e2e8f0)",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", minWidth: 0, flex: 1 }}>
-                    <span
-                      style={{
-                        width: "8px",
-                        height: "8px",
-                        borderRadius: "50%",
-                        background: evt.badgeColor,
-                        marginTop: "5px",
-                        flexShrink: 0,
-                      }}
-                    ></span>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div
-                        style={{
-                          fontSize: "13px",
-                          fontWeight: "700",
-                          color: "var(--text-main, #1e293b)",
-                          wordBreak: "break-word",
-                          lineHeight: "1.4",
-                        }}
-                      >
-                        {evt.title}
-                      </div>
-                      <div style={{ fontSize: "11px", color: "var(--text-muted, #64748b)", marginTop: "2px" }}>
-                        {evt.category}
-                      </div>
-                    </div>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      fontWeight: "600",
-                      color: "var(--text-muted, #64748b)",
-                      whiteSpace: "nowrap",
-                      flexShrink: 0,
-                      alignSelf: "flex-start",
-                      marginTop: "2px",
-                    }}
-                  >
-                    {evt.time}
-                  </span>
-                </div>
+                  {cell}
+                </td>
               ))}
-            </div>
-          )}
-        </div>
-      </div>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

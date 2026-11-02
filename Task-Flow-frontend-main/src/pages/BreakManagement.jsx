@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import API from "../api/api";
+import { formatDuration } from "../utils/formatDuration";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import PageHeader from "../components/common/PageHeader";
@@ -551,7 +552,7 @@ export default function BreakManagement() {
         if (row.status === "On Break") {
           return <span style={{ color: "#d97706", fontWeight: "600" }}>Active</span>;
         }
-        return `${mins || 0} mins`;
+        return formatDuration((mins || 0) / 60);
       }
     },
     {
@@ -1074,7 +1075,7 @@ export default function BreakManagement() {
                         {b.status === "On Break" ? (
                           <span style={{ color: "#d97706" }}>Active</span>
                         ) : (
-                          `${b.duration_minutes || 0} mins`
+                          formatDuration((b.duration_minutes || 0) / 60)
                         )}
                       </td>
                       <td style={{ padding: "14px 18px" }}>

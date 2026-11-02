@@ -7,16 +7,13 @@ const { pool } = require("../config/mysqlDb");
 const authMiddleware = require("../middleware/auth");
 const { sendExpenseMail } = require("../config/mail");
 
-// Ensure uploads directory exists
-const uploadDir = path.join(__dirname, "../uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// Shared absolute uploads directory (created if missing)
+const uploadDir = require("../config/uploadDir");
 
 // Multer storage for receipts
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "./uploads");
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -78,6 +75,14 @@ const canManageCategoriesOrPolicy = (req) => {
   const perms = req.user?.role?.permissions || [];
   const p = perms.find((x) => x.value === "expense_management");
   return p ? p.all || p.update || p.delete : false;
+};
+
+// Admin-level expense management (delete any claim, clear seed data)
+const canManageExpenses = (req) => {
+  if (isCompanyOwnerOrAdmin(req)) return true;
+  const perms = req.user?.role?.permissions || [];
+  const p = perms.find((x) => x.value === "expense_management");
+  return p ? p.all || p.delete : false;
 };
 
 // Helper: Safely parse JSON
@@ -1090,11 +1095,6 @@ router.delete("/:id", authMiddleware, async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
 
-    // Check if user has permission or is Super Admin
-    if (!isSuperAdmin(req) && !canManageExpenses(req)) {
-      return res.status(403).json({ error: "Access denied: You do not have permission to delete claims." });
-    }
-
     const [rows] = await pool.query("SELECT * FROM expenses WHERE id = ? AND company_id = ? LIMIT 1", [
       id,
       companyId,
@@ -1106,8 +1106,12 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 
     const expense = rows[0];
 
-    // If not super admin/manager, only Draft expenses can be deleted
-    if (!isSuperAdmin(req) && !canManageExpenses(req) && expense.status !== "Draft") {
+    // If not super admin/manager, only own Draft expenses can be deleted
+    const canManage = isSuperAdmin(req) || canManageExpenses(req);
+    if (!canManage && expense.employee_id !== userId) {
+      return res.status(403).json({ error: "Access denied: You can only delete your own claims." });
+    }
+    if (!canManage && expense.status !== "Draft") {
       return res.status(400).json({
         error: `Only Draft claims can be deleted. Current status is "${expense.status}".`,
       });

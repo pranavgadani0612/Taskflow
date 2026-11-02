@@ -438,6 +438,15 @@ async function initDB() {
     try {
       await connection.query("ALTER TABLE leave_balances ADD COLUMN user_email VARCHAR(150) NULL");
     } catch (_) {}
+    try {
+      await connection.query("ALTER TABLE leave_balances ADD COLUMN year INT NOT NULL DEFAULT 2026");
+    } catch (_) {}
+    try {
+      await connection.query("ALTER TABLE leave_balances DROP INDEX user_id");
+    } catch (_) {}
+    try {
+      await connection.query("ALTER TABLE leave_balances ADD UNIQUE KEY uq_user_year (user_id, year)");
+    } catch (_) {}
     // Half-day leaves deduct 0.5, and balance may go negative -> signed DECIMAL
     try {
       const [balCols] = await connection.query("SHOW COLUMNS FROM leave_balances WHERE Field = 'cl_balance'");
@@ -474,6 +483,9 @@ async function initDB() {
     } catch (_) {}
     try {
       await connection.query("ALTER TABLE company_leave_settings ADD COLUMN max_short_leave_minutes INT DEFAULT 120");
+    } catch (_) {}
+    try {
+      await connection.query("ALTER TABLE company_leave_settings ADD COLUMN max_short_leaves_per_month INT DEFAULT 2");
     } catch (_) {}
 
     try {

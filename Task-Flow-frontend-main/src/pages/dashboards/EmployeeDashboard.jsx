@@ -22,6 +22,8 @@ import ConfirmModal from "../../components/common/ConfirmModal";
 import CelebrationsWidget from "../../components/common/CelebrationsWidget";
 import ForgotPunchOutAlert from "../../components/attendance/ForgotPunchOutAlert";
 import API from "../../api/api";
+import { formatDuration } from "../../utils/formatDuration";
+import { buildEarlyClockOutMessage } from "../../utils/clockOutMessage";
 import "../../style/main.css";
 
 
@@ -217,16 +219,7 @@ export default function EmployeeDashboard() {
       updateTimer();
       interval = setInterval(updateTimer, 1000);
     } else if (attendance?.clock_out && attendance?.total_hours !== undefined && attendance?.total_hours !== null) {
-      const totalMins = Math.round(Number(attendance.total_hours) * 60);
-      const h = Math.floor(totalMins / 60);
-      const m = totalMins % 60;
-      if (h === 0) {
-        setElapsedTime(`${m} mins`);
-      } else if (m === 0) {
-        setElapsedTime(`${h} hrs`);
-      } else {
-        setElapsedTime(`${h} hrs ${m} mins`);
-      }
+      setElapsedTime(formatDuration(attendance.total_hours));
     } else {
       setElapsedTime("00:00:00");
     }
@@ -281,16 +274,8 @@ export default function EmployeeDashboard() {
     try {
       setAttLoading(true);
       const res = await API.get("/attendance/today");
-      const rem = res.data?.remainingShiftMinutes || 0;
-      let msg = "Are you sure you want to end your shift for today?";
-      if (rem > 0) {
-        const h = Math.floor(rem / 60);
-        const m = Math.round(rem % 60);
-        const timeStr = h > 0 ? `${h} hrs ${m} mins` : `${m} mins`;
-        msg = `You still have ${timeStr} left in your shift. If you Clock Out now, it will be counted as a Half Day / Leave. Are you sure you want to Clock Out?`;
-      } else {
-        msg = "Are you sure you want to end your shift for today? Make sure your daily tasks and timesheet are complete.";
-      }
+      const msg = buildEarlyClockOutMessage(res.data)
+        || "Are you sure you want to end your shift for today? Make sure your daily tasks and timesheet are complete.";
       setClockOutConfirmMsg(msg);
       setShowConfirmClockOut(true);
     } catch (err) {
@@ -470,7 +455,7 @@ export default function EmployeeDashboard() {
                   }}
                 >
                   <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: scheduleInfo.is_working_day === false ? "#f87171" : "#38bdf8", display: "inline-block" }}></span>
-                  {scheduleInfo.day_note || (scheduleInfo.is_working_day === false ? "Company Off Day" : `Shift: ${scheduleInfo.timing} (${scheduleInfo.standardShiftHours}h)`)}
+                  {scheduleInfo.day_note || (scheduleInfo.is_working_day === false ? "Company Off Day" : `Shift: ${scheduleInfo.timing} (${formatDuration(scheduleInfo.standardShiftHours)})`)}
                 </span>
               )}
               {scheduleInfo?.excessBreakMinutes > 0 && (
@@ -707,7 +692,7 @@ export default function EmployeeDashboard() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
           gap: "24px",
           marginBottom: "32px",
         }}

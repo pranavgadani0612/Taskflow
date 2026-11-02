@@ -137,7 +137,9 @@ export default function Role() {
     } catch (error) {
       console.error("Error saving role:", error);
       const errMsg = error.response?.data?.error || error.response?.data?.msg || error.message || "Error saving role";
-      if (errMsg.toLowerCase().includes("role name") || errMsg.toLowerCase().includes("name")) {
+      if (error.response?.status === 409) {
+        setFieldErrors({ name: errMsg });
+      } else if (errMsg.toLowerCase().includes("role name") || errMsg.toLowerCase().includes("name")) {
         setFieldErrors({ name: "Plese enter role name" });
       } else {
         showToast(errMsg, "error");
@@ -203,7 +205,7 @@ export default function Role() {
       load();
     } catch (error) {
       console.error("Error deleting role:", error);
-      showToast("Error deleting role", "error");
+      showToast(error.response?.data?.error || "Error deleting role", "error");
     }
   };
 

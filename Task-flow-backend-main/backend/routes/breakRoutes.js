@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/auth");
 const { pool } = require("../config/mysqlDb");
+const { closeStaleBreaks } = require("../utils/breakHelpers");
 
 const getISTNow = () => {
   const d = new Date();
@@ -37,6 +38,8 @@ router.get("/status", authMiddleware, async (req, res) => {
   try {
     const targetUserId = req.query.userId || (req.user._id ? req.user._id.toString() : req.user.id);
     const filterDate = req.query.date || getISTToday();
+
+    await closeStaleBreaks(targetUserId, "", getISTToday());
 
     // Look for any active break (end_time is NULL)
     const [active] = await pool.query(
@@ -93,6 +96,12 @@ router.post("/start", authMiddleware, async (req, res) => {
     if (att.length === 0) {
       return res.status(400).json({ error: "You must Clock In before taking any break!" });
     }
+
+    if (att[0].clock_out) {
+      return res.status(400).json({ error: "You have already clocked out for today. Breaks cannot be started after Clock Out." });
+    }
+
+    await closeStaleBreaks(userId, userEmail, today);
 
     // Check if already on an ongoing break
     const [ongoing] = await pool.query(
@@ -153,6 +162,8 @@ router.post("/end", authMiddleware, async (req, res) => {
     const userEmail = req.user.email || "";
     const today = getISTToday();
     const now = getISTNow();
+
+    await closeStaleBreaks(userId, userEmail, today);
 
     // Find the active break
     const [active] = await pool.query(
@@ -434,6 +445,11 @@ router.post("/types", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "Break duration cannot exceed 180 minutes (3 hours)" });
     }
 
+    // Window start must be before window end ("HH:MM" strings compare correctly)
+    if (String(window_start || "00:00").slice(0, 5) >= String(window_end || "23:59").slice(0, 5)) {
+      return res.status(400).json({ error: "Break window start time must be earlier than end time" });
+    }
+
     let companyId = req.user.companyId?._id?.toString() || req.user.companyId?.toString() || null;
     const id = `brk_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
@@ -472,8 +488,19 @@ router.put("/types/:id", authMiddleware, async (req, res) => {
       }
     }
 
+    const [existing] = await pool.query("SELECT window_start, window_end FROM break_types WHERE id = ?", [req.params.id]);
+    if (!existing.length) {
+      return res.status(404).json({ error: "Break type not found" });
+    }
+    // Window start must be before window end (fall back to stored values when not sent)
+    const newStart = String(window_start || existing[0].window_start || "00:00").slice(0, 5);
+    const newEnd = String(window_end || existing[0].window_end || "23:59").slice(0, 5);
+    if (newStart >= newEnd) {
+      return res.status(400).json({ error: "Break window start time must be earlier than end time" });
+    }
+
     await pool.query(
-      `UPDATE break_types 
+      `UPDATE break_types
        SET name = COALESCE(?, name),
            duration_minutes = COALESCE(?, duration_minutes),
            window_start = COALESCE(?, window_start),
@@ -497,7 +524,10 @@ router.delete("/types/:id", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "Access Denied: Only Admin can delete break types." });
     }
 
-    await pool.query("DELETE FROM break_types WHERE id = ?", [req.params.id]);
+    const [result] = await pool.query("DELETE FROM break_types WHERE id = ?", [req.params.id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Break type not found" });
+    }
     res.json({ message: "Break type removed successfully" });
   } catch (err) {
     console.error("Error deleting break type:", err);

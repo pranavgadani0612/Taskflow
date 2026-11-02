@@ -15,6 +15,19 @@ const isUserAdminOrManager = (req) => {
     position.includes("Lead");
 };
 
+// Projects link to clients via the clients.projects JSON column (array of ids or {id/_id} objects)
+const getClientProjectIds = (client) => {
+  let list = client?.projects;
+  if (typeof list === "string") {
+    try { list = JSON.parse(list); } catch (_) { list = []; }
+  }
+  if (!Array.isArray(list)) return [];
+  return list
+    .map(item => (item && typeof item === "object" ? (item._id || item.id) : item))
+    .filter(Boolean)
+    .map(String);
+};
+
 // 1. GET BILLABLE HOURS & CLIENT SUMMARY
 router.get("/summary", authMiddleware, async (req, res) => {
   try {
@@ -31,22 +44,12 @@ router.get("/summary", authMiddleware, async (req, res) => {
     let clients = [];
     try {
       const [cRows] = await pool.query(
-        `SELECT id, name, email, company, hourly_billing_rate, currency FROM clients`
+        `SELECT id, name, email, company, hourly_billing_rate, currency, projects FROM clients`
       );
       clients = cRows || [];
     } catch (e) {
       console.warn("Could not query clients table:", e.message);
       clients = [];
-    }
-
-    // Fetch projects safely
-    let projects = [];
-    try {
-      const [projRows] = await pool.query(`SELECT id, name, client_id FROM projects`);
-      projects = projRows || [];
-    } catch (e) {
-      console.warn("Could not query projects table:", e.message);
-      projects = [];
     }
 
     // Fetch aggregated timesheets safely
@@ -71,18 +74,12 @@ router.get("/summary", authMiddleware, async (req, res) => {
     }
 
     // Build client-wise report
-    const clientReports = (clients.length > 0 ? clients : [
-      { id: "cl_1", name: "Padhya Enterprise Clients", company: "Padhya Technologies", hourly_billing_rate: 1200.00, currency: "INR" },
-      { id: "cl_2", name: "Apex Retailers Ltd", company: "Apex Retail", hourly_billing_rate: 950.00, currency: "INR" }
-    ]).map(c => {
+    const clientReports = clients.map(c => {
       const clientRate = parseFloat(c.hourly_billing_rate) || 1000.00;
       const currency = c.currency || "INR";
 
       // Match projects for this client
-      const matchedProjects = projects.filter(p => p.client_id === c.id);
-      const projectIds = matchedProjects.length > 0 
-        ? matchedProjects.map(p => p.id) 
-        : (c.id === "cl_1" ? ["proj_fintech"] : ["proj_ecommerce"]);
+      const projectIds = getClientProjectIds(c);
 
       const projectStats = timesheetAgg.filter(t => projectIds.includes(t.project_id));
       
@@ -130,32 +127,34 @@ router.post("/generate-invoice", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "Access Denied: Only Admin/Managers can generate client invoices." });
     }
 
-    const { client_id, start_date, end_date, tax_rate = 18.0 } = req.body;
+    const { client_id, start_date, end_date } = req.body;
+    const tax_rate = req.body.tax_rate === undefined ? 18.0 : parseFloat(req.body.tax_rate);
+    if (!Number.isFinite(tax_rate) || tax_rate < 0 || tax_rate > 100) {
+      return res.status(400).json({ error: "tax_rate must be a number between 0 and 100." });
+    }
 
-    let clientQuery = `SELECT * FROM clients WHERE id = ?`;
-    let [clients] = await pool.query(clientQuery, [client_id]);
-    let client = clients[0] || {
-      id: client_id || "cl_1",
-      name: "Global FinTech Corp",
-      company: "FinTech Corp",
-      email: "billing@fintechcorp.com",
-      hourly_billing_rate: 45.00,
-      currency: "USD"
-    };
+    const [clients] = await pool.query(`SELECT * FROM clients WHERE id = ?`, [client_id]);
+    if (clients.length === 0) {
+      return res.status(404).json({ error: "Client not found." });
+    }
+    const client = clients[0];
 
     const rate = parseFloat(client.hourly_billing_rate) || 35.00;
     const currency = client.currency || "USD";
 
-    // Fetch timesheet entries
-    let tsQuery = `SELECT * FROM timesheets WHERE is_billable = 1`;
-    const params = [];
-    if (start_date && end_date) {
-      tsQuery += ` AND date BETWEEN ? AND ?`;
-      params.push(start_date, end_date);
+    // Fetch billable timesheet entries for this client's projects only
+    const projectIds = getClientProjectIds(client);
+    let timesheets = [];
+    if (projectIds.length > 0) {
+      let tsQuery = `SELECT * FROM timesheets WHERE is_billable = 1 AND project_id IN (?)`;
+      const params = [projectIds];
+      if (start_date && end_date) {
+        tsQuery += ` AND date BETWEEN ? AND ?`;
+        params.push(start_date, end_date);
+      }
+      tsQuery += ` ORDER BY date DESC`;
+      [timesheets] = await pool.query(tsQuery, params);
     }
-    tsQuery += ` ORDER BY date DESC`;
-
-    const [timesheets] = await pool.query(tsQuery, params);
 
     const totalHours = timesheets.reduce((acc, curr) => acc + parseFloat(curr.hours || 0), 0);
     const subtotal = Math.round(totalHours * rate * 100) / 100;

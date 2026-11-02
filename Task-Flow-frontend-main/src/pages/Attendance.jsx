@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import API from "../api/api";
+import { formatDuration } from "../utils/formatDuration";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { usePermissions } from "../contexts/PermissionContext";
@@ -575,6 +576,8 @@ export default function Attendance() {
           total_hours: effectiveHours,
           clock_in: fullClockIn,
           clock_out: fullClockOut,
+          // Clock-out field emptied on a record that had one -> reopen the shift
+          clear_clock_out: Boolean(editRecord.clock_out) && !formData.clock_out,
           work_mode: formData.work_mode,
           notes: formData.notes,
           only_admin_clock_out: formData.only_admin_clock_out ? 1 : 0,
@@ -623,27 +626,20 @@ export default function Attendance() {
 
   // Helper: Calculate duration between two time strings like "09:30" and "18:30"
   const calculateShiftHours = (inTime, outTime) => {
-    if (!inTime || !outTime) return "0 hrs";
+    if (!inTime || !outTime) return formatDuration(0);
     const [h1, m1] = inTime.split(":").map(Number);
     const [h2, m2] = outTime.split(":").map(Number);
     let diffMinutes = (h2 * 60 + m2) - (h1 * 60 + m1);
     if (diffMinutes < 0) diffMinutes += 24 * 60; // overnight shift
-    const hrs = (diffMinutes / 60).toFixed(1);
-    return `${hrs.endsWith(".0") ? parseInt(hrs, 10) : hrs} hrs`;
+    return formatDuration(diffMinutes / 60);
   };
 
   // Helper: Format decimal hours (e.g. 9.62) to human-readable format "9h 37m" (or "9 hrs 37 mins")
   const formatHoursToHM = (decimalHours) => {
     if (decimalHours === null || decimalHours === undefined || decimalHours === "" || isNaN(decimalHours)) {
-      return "0h 0m";
+      return formatDuration(0);
     }
-    const totalMinutes = Math.round(parseFloat(decimalHours) * 60);
-    if (totalMinutes <= 0) return "0h 0m";
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    if (hours === 0) return `${minutes}m`;
-    if (minutes === 0) return `${hours}h`;
-    return `${hours}h ${minutes}m`;
+    return formatDuration(Math.max(0, parseFloat(decimalHours)));
   };
 
   // Helper: Get exact time after X hours from clock_in_time (e.g. 09:30 + 4.75 hrs = 14:15 / 02:15 PM)
@@ -690,7 +686,7 @@ export default function Attendance() {
           </p>
         </div>
         <div style={{ display: "flex", gap: "10px" }}>
-          {activeTab === "attendance" && canCreate && (
+          {activeTab === "attendance" && canCreate && (isSuperAdmin || isCompanyOwner) && (
             <button 
               className="primary-button"
               onClick={() => {
@@ -1437,7 +1433,7 @@ export default function Attendance() {
                       <tr key={ot.id} style={{ borderBottom: "1px solid var(--ui-border, #f1f5f9)" }}>
                         <td style={{ padding: "10px 14px", fontWeight: "700", color: "#1e293b" }}>{ot.date}</td>
                         <td style={{ padding: "10px", fontWeight: "600" }}>{ot.user_name}</td>
-                        <td style={{ padding: "10px", fontWeight: "800", color: "#4f46e5" }}>+{ot.ot_hours} hrs</td>
+                        <td style={{ padding: "10px", fontWeight: "800", color: "#4f46e5" }}>+{formatDuration(ot.ot_hours)}</td>
                         <td style={{ padding: "10px" }}>
                           <span style={{
                             padding: "2px 8px",
@@ -1634,7 +1630,7 @@ export default function Attendance() {
         submitText={processingOtReview ? "Processing..." : (otReviewModal.action === "approve" ? "Confirm Approval" : "Confirm Rejection")}
       >
         <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-muted)" }}>
-          {otReviewModal.item?.user_name} claimed <strong>+{otReviewModal.item?.ot_hours} hrs</strong> on <strong>{otReviewModal.item?.date}</strong> for "{otReviewModal.item?.reason}".
+          {otReviewModal.item?.user_name} claimed <strong>+{formatDuration(otReviewModal.item?.ot_hours)}</strong> on <strong>{otReviewModal.item?.date}</strong> for "{otReviewModal.item?.reason}".
           {otReviewModal.item?.action_type === "Credit Comp-Off" && otReviewModal.action === "approve" && (
             <div style={{ color: "#059669", fontWeight: "700", marginTop: "6px" }}>
               Compensatory off will be automatically credited to employee leave balance upon approval.
@@ -1866,7 +1862,7 @@ export default function Attendance() {
                         <div style={{ background: "rgba(59, 130, 246, 0.1)", padding: "8px 10px", borderRadius: "8px", border: "1px solid rgba(59, 130, 246, 0.2)" }}>
                           <span style={{ display: "block", color: "#3b82f6", fontSize: "11px", fontWeight: "700" }}>1ST HALF</span>
                           <strong style={{ color: "#60a5fa", fontSize: "12px" }}>
-                            {item.first_half_hours || "4.75"} hrs
+                            {formatDuration(item.first_half_hours || 4.75)}
                           </strong>
                           <span style={{ display: "block", color: "var(--text-muted, #64748b)", fontSize: "11px", marginTop: "2px" }}>
                             Up to {getTimeAfterHours(item.clock_in_time, item.first_half_hours || 4.75)}
@@ -1875,7 +1871,7 @@ export default function Attendance() {
                         <div style={{ background: "rgba(217, 70, 239, 0.1)", padding: "8px 10px", borderRadius: "8px", border: "1px solid rgba(217, 70, 239, 0.2)" }}>
                           <span style={{ display: "block", color: "#d946ef", fontSize: "11px", fontWeight: "700" }}>2ND HALF</span>
                           <strong style={{ color: "#f472b6", fontSize: "12px" }}>
-                            {item.second_half_hours || "4.75"} hrs
+                            {formatDuration(item.second_half_hours || 4.75)}
                           </strong>
                           <span style={{ display: "block", color: "var(--text-muted, #64748b)", fontSize: "11px", marginTop: "2px" }}>
                             After {getTimeAfterHours(item.clock_in_time, item.first_half_hours || 4.75)}

@@ -180,9 +180,39 @@ router.put("/:id", authMiddleware, async (req, res) => {
     }
     const old = existing[0];
 
+    // Same validation as create, applied to the fields being changed
+    if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+      return res.status(400).json({ error: "Plese enter client name", field: "name" });
+    }
+    let cleanEmail = old.email;
+    if (email !== undefined) {
+      if (typeof email !== "string" || !email.trim()) {
+        return res.status(400).json({ error: "Plese enter email", field: "email" });
+      }
+      cleanEmail = email.trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanEmail)) {
+        return res.status(400).json({ error: "Plese enter valid email address", field: "email" });
+      }
+      const [dup] = await pool.query(
+        "SELECT id FROM clients WHERE email = ? AND id != ? AND (company_id = ? OR company_id = 'default_company') LIMIT 1",
+        [cleanEmail, req.params.id, old.company_id || "default_company"]
+      );
+      if (dup.length > 0) {
+        return res.status(409).json({ error: `A client with email '${cleanEmail}' already exists!` });
+      }
+    }
+    if (phone) {
+      const phoneRegex = /^[0-9+\-\s]{7,15}$/;
+      if (!phoneRegex.test(String(phone).trim())) {
+        return res.status(400).json({ error: "Please enter a valid phone number (digits only, 7-15 numbers)" });
+      }
+    }
+
+    // mysql2 returns JSON columns already parsed, so re-serialize the old value
     const projectsJson = projects !== undefined
       ? JSON.stringify(Array.isArray(projects) ? projects : [])
-      : old.projects;
+      : (typeof old.projects === "string" ? old.projects : JSON.stringify(old.projects ?? []));
 
     await pool.query(
       `UPDATE clients SET
@@ -197,7 +227,7 @@ router.put("/:id", authMiddleware, async (req, res) => {
        WHERE id = ?`,
       [
         name !== undefined ? name.trim() : old.name,
-        email !== undefined ? email.trim().toLowerCase() : old.email,
+        cleanEmail,
         phone !== undefined ? phone : old.phone,
         company !== undefined ? company : old.company,
         address !== undefined ? address : old.address,
@@ -220,7 +250,10 @@ router.put("/:id", authMiddleware, async (req, res) => {
 // ================= DELETE CLIENT =================
 router.delete("/:id", authMiddleware, async (req, res) => {
   try {
-    await pool.query("DELETE FROM clients WHERE id = ?", [req.params.id]);
+    const [result] = await pool.query("DELETE FROM clients WHERE id = ?", [req.params.id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Client not found" });
+    }
     res.json({ success: true, message: "Client deleted" });
   } catch (err) {
     console.error("❌ CLIENT_DELETE_ERROR:", err);

@@ -104,6 +104,16 @@ router.post("/", authMiddleware, async (req, res) => {
     }
 
     const companyId = getCompanyId(req);
+
+    // Asset tags must be unique within the company
+    const [dupTag] = await pool.query(
+      `SELECT id FROM company_assets WHERE asset_tag = ? AND (company_id = ? OR company_id = 'default_company') LIMIT 1`,
+      [asset_tag.trim(), companyId]
+    );
+    if (dupTag.length > 0) {
+      return res.status(409).json({ error: `Asset tag '${asset_tag.trim()}' already exists.`, field: "asset_tag" });
+    }
+
     const id = `ast_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
     await pool.query(
@@ -112,7 +122,7 @@ router.post("/", authMiddleware, async (req, res) => {
         purchase_date, purchase_cost, warranty_expiry, status, specs, notes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Available', ?, ?)`,
       [
-        id, companyId, asset_tag, name, category, brand || null, model || null, serial_number || null,
+        id, companyId, asset_tag.trim(), name, category, brand || null, model || null, serial_number || null,
         purchase_date || null, purchase_cost || 0, warranty_expiry || null,
         specs ? JSON.stringify(specs) : null, notes || null
       ]
@@ -149,6 +159,29 @@ router.put("/:id", authMiddleware, async (req, res) => {
       purchase_date, purchase_cost, warranty_expiry, status, specs, notes
     } = req.body;
 
+    const [existing] = await pool.query(`SELECT id, company_id FROM company_assets WHERE id = ?`, [id]);
+    if (existing.length === 0) return res.status(404).json({ error: "Asset not found." });
+
+    if (asset_tag !== undefined && (typeof asset_tag !== "string" || !asset_tag.trim())) {
+      return res.status(400).json({ error: "Plese enter asset tag", field: "asset_tag" });
+    }
+    if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+      return res.status(400).json({ error: "Plese enter name", field: "name" });
+    }
+    if (purchase_cost !== undefined && purchase_cost !== "" && parseFloat(purchase_cost) < 0) {
+      return res.status(400).json({ error: "Purchase cost cannot be negative." });
+    }
+    if (asset_tag !== undefined) {
+      const [dupTag] = await pool.query(
+        `SELECT id FROM company_assets WHERE asset_tag = ? AND id != ? AND (company_id = ? OR company_id = 'default_company') LIMIT 1`,
+        [asset_tag.trim(), id, existing[0].company_id]
+      );
+      if (dupTag.length > 0) {
+        return res.status(409).json({ error: `Asset tag '${asset_tag.trim()}' already exists.`, field: "asset_tag" });
+      }
+    }
+
+    // Dates: "" clears the value (stored as NULL, not 0000-00-00); undefined keeps the existing one
     await pool.query(
       `UPDATE company_assets SET
         asset_tag = COALESCE(?, asset_tag),
@@ -157,16 +190,19 @@ router.put("/:id", authMiddleware, async (req, res) => {
         brand = COALESCE(?, brand),
         model = COALESCE(?, model),
         serial_number = COALESCE(?, serial_number),
-        purchase_date = COALESCE(?, purchase_date),
+        purchase_date = IF(?, ?, purchase_date),
         purchase_cost = COALESCE(?, purchase_cost),
-        warranty_expiry = COALESCE(?, warranty_expiry),
+        warranty_expiry = IF(?, ?, warranty_expiry),
         status = COALESCE(?, status),
         specs = COALESCE(?, specs),
         notes = COALESCE(?, notes)
        WHERE id = ?`,
       [
-        asset_tag, name, category, brand, model, serial_number,
-        purchase_date, purchase_cost, warranty_expiry, status,
+        asset_tag !== undefined ? asset_tag.trim() : undefined, name, category, brand, model, serial_number,
+        purchase_date !== undefined, purchase_date || null,
+        purchase_cost === "" ? null : purchase_cost,
+        warranty_expiry !== undefined, warranty_expiry || null,
+        status,
         specs ? JSON.stringify(specs) : null, notes, id
       ]
     );
@@ -303,7 +339,8 @@ router.delete("/:id", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "Access Denied." });
     }
     const { id } = req.params;
-    await pool.query(`DELETE FROM company_assets WHERE id = ?`, [id]);
+    const [result] = await pool.query(`DELETE FROM company_assets WHERE id = ?`, [id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: "Asset not found." });
     res.json({ message: "Asset deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });

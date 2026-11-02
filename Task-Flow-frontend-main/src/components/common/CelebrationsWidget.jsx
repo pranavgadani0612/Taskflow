@@ -105,7 +105,7 @@ export default function CelebrationsWidget() {
               boxShadow: activeTab === "upcoming" ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
             }}
           >
-            Next 14 Days ({totalUpcoming})
+            Next 10 Days ({totalUpcoming})
           </button>
         </div>
       </div>

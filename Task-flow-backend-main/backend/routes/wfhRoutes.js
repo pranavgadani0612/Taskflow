@@ -8,6 +8,17 @@ const isUserSuperAdmin = (req) => {
   return req.user?.email === superEmail || req.user?.role?.name === "Super Admin" || req.user?.role === "Super Admin" || req.user?.role?.name === "Company Owner";
 };
 
+// Values sent by WfhRequests.jsx
+const REQUEST_TYPES = ["WFH", "On-Duty"];
+const DAY_TYPES = ["Full Day", "First Half", "Second Half"];
+
+// YYYY-MM-DD and a real calendar date (rejects 2026-02-30, not-a-date, ...)
+const isValidDate = (str) => {
+  if (typeof str !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+  const d = new Date(`${str}T00:00:00Z`);
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === str;
+};
+
 // 1. SUBMIT WFH / ON-DUTY REQUEST
 router.post("/", authMiddleware, async (req, res) => {
   try {
@@ -26,6 +37,19 @@ router.post("/", authMiddleware, async (req, res) => {
     }
     if (!reason || !reason.trim()) {
       return res.status(400).json({ error: "Plese enter reason", field: "reason" });
+    }
+
+    if (!isValidDate(from_date)) {
+      return res.status(400).json({ error: "Please enter a valid date", field: "from_date" });
+    }
+    if (!isValidDate(to_date)) {
+      return res.status(400).json({ error: "Please enter a valid date", field: "to_date" });
+    }
+    if (!REQUEST_TYPES.includes(request_type)) {
+      return res.status(400).json({ error: "Please select a valid request type", field: "request_type" });
+    }
+    if (!DAY_TYPES.includes(day_type)) {
+      return res.status(400).json({ error: "Please select a valid day type", field: "day_type" });
     }
 
     if (new Date(to_date) < new Date(from_date)) {

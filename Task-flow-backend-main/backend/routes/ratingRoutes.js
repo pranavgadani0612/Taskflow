@@ -196,7 +196,10 @@ router.post("/", authMiddleware, async (req, res) => {
 // @route   DELETE /api/ratings/:id
 router.delete("/:id", authMiddleware, async (req, res) => {
   try {
-    await pool.query("DELETE FROM ratings WHERE id = ?", [req.params.id]);
+    const [result] = await pool.query("DELETE FROM ratings WHERE id = ?", [req.params.id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Rating not found" });
+    }
     res.json({ message: "Rating deleted successfully." });
   } catch (error) {
     console.error("Error deleting rating:", error);

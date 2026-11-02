@@ -664,4 +664,21 @@
     display: block;
     overflow-x: auto;
   }
+  /* Fixed layout so description/amount inputs shrink to fit the modal */
+  .line-items-table {
+    table-layout: fixed;
+  }
+  .line-items-table th,
+  .line-items-table td {
+    padding: 6px 4px;
+  }
+  .line-items-table th:nth-child(2) {
+    width: 96px !important;
+  }
+  .line-items-table th:nth-child(3) {
+    width: 24px !important;
+  }
+  .line-items-table .expense-input {
+    min-width: 0;
+  }
 }

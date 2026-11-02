@@ -78,9 +78,6 @@ const companySchema = new mongoose.Schema({
     enum: ["Active", "Inactive"], 
     default: "Active" 
   },
-  subscription: { type: mongoose.Schema.Types.ObjectId, ref: "Subscription", default: null },
-  subscriptionStatus: { type: String, enum: ["trial", "active", "expired"], default: "trial" },
-  subscriptionExpiry: { type: Date, default: null },
   workingHours: {
     start: { type: String, default: "09:00" },
     end: { type: String, default: "18:00" }

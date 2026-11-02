@@ -11,7 +11,8 @@ router.post("/register", upload.single("appLogo"), companyController.registerCom
 // Protected CRUD (Superadmin mostly, or specifically assigned roles)
 // The user said Company List Page is ONLY for superadmin.
 router.get("/", authMiddleware, checkPermission("company_management", "read"), companyController.getCompanies);
-router.get("/:id", authMiddleware, checkPermission("company_management", "read"), companyController.getCompanyById);
+router.post("/", authMiddleware, checkPermission("company_management", "create"), upload.single("appLogo"), companyController.createCompany);
+router.get("/:id",authMiddleware, checkPermission("company_management", "read"), companyController.getCompanyById);
 router.put("/:id", authMiddleware, checkPermission("company_management", "update"), upload.single("appLogo"), companyController.updateCompany);
 router.delete("/:id", authMiddleware, checkPermission("company_management", "delete"), companyController.deleteCompany);
 

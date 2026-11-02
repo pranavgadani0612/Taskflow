@@ -195,7 +195,7 @@ export default function Project() {
             load();
         } catch (error) {
             console.error(error);
-            showToast("Error deleting project", "error");
+            showToast(error.response?.data?.error || "Error deleting project", "error");
         }
     };
 

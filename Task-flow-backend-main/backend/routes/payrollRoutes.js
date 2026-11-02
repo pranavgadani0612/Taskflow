@@ -107,8 +107,17 @@ router.post("/generate-run", authMiddleware, async (req, res) => {
     }
 
     const { month_year = new Date().toISOString().slice(0, 7) } = req.body; // e.g. "2026-10"
+    if (typeof month_year !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month_year)) {
+      return res.status(400).json({ error: "month_year must be in YYYY-MM format." });
+    }
     const companyId = getCompanyId(req);
-    const runId = `run_${month_year.replace("-", "_")}_${Date.now()}`;
+
+    // Reuse the existing run id when regenerating a month (unique on company_id + month_year)
+    const [existingRuns] = await pool.query(
+      `SELECT id FROM payroll_runs WHERE company_id = ? AND month_year = ? LIMIT 1`,
+      [companyId, month_year]
+    );
+    const runId = existingRuns[0]?.id || `run_${month_year.replace("-", "_")}_${Date.now()}`;
 
     // Get all active employees
     const [employees] = await pool.query(
@@ -134,8 +143,9 @@ router.post("/generate-run", authMiddleware, async (req, res) => {
         tds_monthly: 1500.00
       };
 
-      const basic = parseFloat(sal.basic_monthly) || 25000;
-      const hra = parseFloat(sal.hra_monthly) || 12500;
+      // Only fall back to defaults when the value is missing (a real 0 stays 0)
+      const basic = sal.basic_monthly != null && !isNaN(parseFloat(sal.basic_monthly)) ? parseFloat(sal.basic_monthly) : 25000;
+      const hra = sal.hra_monthly != null && !isNaN(parseFloat(sal.hra_monthly)) ? parseFloat(sal.hra_monthly) : 12500;
       const allowances = (parseFloat(sal.special_allowance) || 0) + (parseFloat(sal.conveyance) || 0);
       const gross = basic + hra + allowances;
 
@@ -157,7 +167,7 @@ router.post("/generate-run", authMiddleware, async (req, res) => {
       const lopDeduction = Math.round(perDaySalary * unpaidDays);
 
       const pf = parseFloat(sal.pf_deduction) || 0;
-      const pt = parseFloat(sal.pt_deduction) || 200;
+      const pt = sal.pt_deduction != null && !isNaN(parseFloat(sal.pt_deduction)) ? parseFloat(sal.pt_deduction) : 200;
       const tds = parseFloat(sal.tds_monthly) || 0;
       const empTotalDeductions = pf + pt + tds + lopDeduction;
 
@@ -165,13 +175,15 @@ router.post("/generate-run", authMiddleware, async (req, res) => {
       let reimbursementAmt = 0;
       try {
         const [expRows] = await pool.query(
-          `SELECT SUM(amount) as total_reimb FROM expenses 
-           WHERE (employee_id = ? OR employee_email = ?) 
-             AND status = 'Approved' AND expense_date LIKE ?`,
-          [emp.id, emp.email, `${month_year}%`]
+          `SELECT SUM(COALESCE(approved_amount, total_amount)) as total_reimb FROM expenses
+           WHERE (employee_id = ? OR employee_email = ?)
+             AND status IN ('Approved', 'Paid') AND DATE_FORMAT(expense_date, '%Y-%m') = ?`,
+          [emp.id, emp.email, month_year]
         );
         reimbursementAmt = parseFloat(expRows[0]?.total_reimb) || 0;
-      } catch (_) {}
+      } catch (err) {
+        console.error(`Payroll reimbursement lookup failed for ${emp.id}:`, err.message);
+      }
 
       const netSalary = Math.max(0, (gross - empTotalDeductions) + reimbursementAmt);
 

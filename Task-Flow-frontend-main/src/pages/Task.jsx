@@ -5,6 +5,7 @@ import FormModal from "../components/common/FormModal";
 import PageHeader from "../components/common/PageHeader";
 import ConfirmModal from "../components/common/ConfirmModal";
 import API from "../api/api";
+import { formatDuration } from "../utils/formatDuration";
 import { useProject } from "../contexts/ProjectContext";
 import { useSocket } from "../contexts/SocketContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -702,6 +703,30 @@ export default function Task({ isIssue = false }) {
         }
       },
       {
+        header: "Hours",
+        key: "estimatedHours",
+        render: (v, row) => {
+          const subHoursTotal = Array.isArray(row.subtasks)
+            ? row.subtasks.reduce((sum, s) => sum + (parseFloat(s.hours) || 0), 0)
+            : 0;
+          const totalH = subHoursTotal > 0 ? subHoursTotal : (parseFloat(v) || parseFloat(row.estimated_hours) || 0);
+          return (
+            <span style={{
+              fontSize: "12px",
+              fontWeight: "700",
+              color: totalH > 0 ? "#4f46e5" : "#94a3b8",
+              background: totalH > 0 ? "#eef2ff" : "#f1f5f9",
+              padding: "4px 8px",
+              borderRadius: "8px",
+              whiteSpace: "nowrap",
+              display: "inline-block"
+            }}>
+              {totalH > 0 ? formatDuration(totalH) : "—"}
+            </span>
+          );
+        }
+      },
+      {
         header: "Subtasks",
         key: "subtasks",
         render: (v, row) => {
@@ -724,7 +749,7 @@ export default function Task({ isIssue = false }) {
                     }}
                   >
                     <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-main, #334155)", maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={st.title}>
-                      ↳ {st.title} {st.hours ? <span style={{ fontSize: "11px", color: "var(--primary-color, #4f46e5)", fontWeight: "700" }}>({st.hours}h)</span> : null}
+                      ↳ {st.title} {st.hours ? <span style={{ fontSize: "11px", color: "var(--primary-color, #4f46e5)", fontWeight: "700" }}>({formatDuration(st.hours)})</span> : null}
                     </div>
                     <select
                       value={st.status || "Pending"}
@@ -2309,6 +2334,19 @@ export default function Task({ isIssue = false }) {
                 <div style={{ fontSize: "11px", fontWeight: "700", color: "var(--text-muted, #64748b)", textTransform: "uppercase" }}>Timeline</div>
                 <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-main, #1e293b)", marginTop: "4px" }}>
                   {viewTask.startDate ? new Date(viewTask.startDate).toLocaleDateString('en-GB') : "—"} → {viewTask.endDate || viewTask.calculatedEndDate ? new Date(viewTask.endDate || viewTask.calculatedEndDate).toLocaleDateString('en-GB') : "—"}
+                </div>
+              </div>
+
+                <div style={{ background: "var(--ui-surface, #fff)", border: "1px solid var(--ui-border, #e2e8f0)", padding: "12px", borderRadius: "8px" }}>
+                <div style={{ fontSize: "11px", fontWeight: "700", color: "var(--text-muted, #64748b)", textTransform: "uppercase" }}>Total Hours</div>
+                <div style={{ fontSize: "14px", fontWeight: "800", color: "#4f46e5", marginTop: "4px" }}>
+                  {(() => {
+                    const subH = Array.isArray(viewTask.subtasks)
+                      ? viewTask.subtasks.reduce((sum, s) => sum + (parseFloat(s.hours) || 0), 0)
+                      : 0;
+                    const tot = subH > 0 ? subH : (parseFloat(viewTask.estimatedHours) || parseFloat(viewTask.estimated_hours) || 0);
+                    return tot > 0 ? formatDuration(tot) : "—";
+                  })()}
                 </div>
               </div>
 
