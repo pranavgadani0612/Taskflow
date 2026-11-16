@@ -1545,8 +1545,9 @@ router.get("/regularizations", authMiddleware, async (req, res) => {
     const isSuper = isUserSuperAdmin(req);
     const isManager = req.user.position?.includes("Manager") || req.user.role?.name?.includes("Manager");
 
-    const { status, target_date, startDate, endDate, employee, userId: filterUser, page = 1, limit = 50 } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { status, target_date, startDate, endDate, employee, userId: filterUser, page = 1, limit = 5000 } = req.query;
+    const parsedLimit = parseInt(limit) || 5000;
+    const offset = (parseInt(page) - 1) * parsedLimit;
 
     await autoClosePastUnclosedAttendance(null, null, getISTToday());
 
@@ -1613,7 +1614,7 @@ router.get("/regularizations", authMiddleware, async (req, res) => {
        ${whereClause} 
        ORDER BY a.date DESC, a.clock_in DESC 
        LIMIT ? OFFSET ?`,
-      [...params, parseInt(limit), parseInt(offset)]
+      [...params, parsedLimit, parseInt(offset)]
     );
 
     const [countRows] = await pool.query(

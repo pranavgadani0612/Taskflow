@@ -150,7 +150,7 @@ router.get("/all", authMiddleware, async (req, res) => {
       return res.status(403).json({ error: "Access denied. Only managers/admins can review all timesheets." });
     }
 
-    const { projectId, status, userId, date } = req.query;
+    const { projectId, status, userId, date, startDate, endDate, from, to } = req.query;
     let query = `
       SELECT t.* 
       FROM timesheets t
@@ -168,15 +168,28 @@ router.get("/all", authMiddleware, async (req, res) => {
       params.push(status);
     }
     if (userId) {
-      query += ` AND t.user_id = ?`;
-      params.push(userId);
+      query += ` AND (t.user_id = ? OR t.user_email = ?)`;
+      params.push(userId, userId);
     }
+
+    const start = startDate || from;
+    const end = endDate || to;
+
     if (date) {
       query += ` AND t.date = ?`;
       params.push(date);
+    } else if (start && end) {
+      query += ` AND t.date BETWEEN ? AND ?`;
+      params.push(start, end);
+    } else if (start) {
+      query += ` AND t.date >= ?`;
+      params.push(start);
+    } else if (end) {
+      query += ` AND t.date <= ?`;
+      params.push(end);
     }
 
-    query += ` ORDER BY t.date DESC, t.created_at DESC LIMIT 200`;
+    query += ` ORDER BY t.date DESC, t.created_at DESC LIMIT 1000`;
 
     const [rows] = await pool.query(query, params);
     res.json(rows);

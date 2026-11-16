@@ -14,6 +14,20 @@ import { useTableSort, SortIndicator } from "../utils/tableSort";
 import "../style/main.css";
 import "../style/table.css";
 
+// Import jsPDF for PDF export - dynamic import for browser
+let loadJsPDF = async () => {
+  if (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF) {
+    return window.jspdf.jsPDF;
+  }
+  try {
+    const module = await import('jspdf');
+    return module.jsPDF;
+  } catch (error) {
+    console.error('Failed to load jsPDF:', error);
+    return null;
+  }
+};
+
 export default function Attendance() {
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -539,6 +553,436 @@ export default function Attendance() {
         showToast(err.response?.data?.error || "Delete failed", "error");
       }
     });
+  };
+
+  // Helper: check if record belongs to Super Admin
+  const isSuperAdminRecord = (r) => {
+    if (!r) return false;
+    const name = (r.user_name || r.name || "").toLowerCase();
+    const email = (r.user_email || r.email || "").toLowerCase();
+    return email === "gadanipranav@gmail.com" || name.includes("super admin");
+  };
+
+  // Export to Excel
+  const exportToExcel = () => {
+    if (regularizations.length === 0) {
+      showToast("No data to export", "error");
+      return;
+    }
+
+    // Sort by employee name (A to Z) then Date (desc), excluding Super Admin
+    const sortedRegs = [...regularizations]
+      .filter(r => !isSuperAdminRecord(r))
+      .sort((a, b) => {
+        const nameA = (a.user_name || "").toLowerCase();
+        const nameB = (b.user_name || "").toLowerCase();
+        const nameCmp = nameA.localeCompare(nameB);
+        if (nameCmp !== 0) return nameCmp;
+        return (b.date || "").localeCompare(a.date || "");
+      });
+
+    // Target working hours per day
+    const TARGET_HOURS = 8.5; // Standard 8.5 hours shift
+
+    // Helper: Determine if row is eligible for shortage calculation
+    // If employee is On Leave, Holiday, Absent, or has Not Punched Out, do NOT calculate normal shortage
+    const isRowEligibleForShortage = (r) => {
+      const statusLower = (r.status || "").toLowerCase();
+      const isMissingPunchOut = Boolean(r.clock_in && !r.clock_out);
+      if (isMissingPunchOut || r.status === "Not Punch Out") return false;
+      if (statusLower.includes("leave") || statusLower.includes("holiday") || statusLower.includes("absent")) return false;
+      if (!r.clock_in || r.clock_in === "-" || r.clock_in === "") return false;
+      return true;
+    };
+
+    const totalHoursDecimal = sortedRegs.reduce((acc, r) => {
+      const isMissingPunchOut = Boolean(r.clock_in && !r.clock_out) || r.status === "Not Punch Out";
+      if (isMissingPunchOut) return acc;
+      return acc + (parseFloat(r.total_hours) || 0);
+    }, 0);
+
+    const totalShortageDecimal = sortedRegs.reduce((acc, r) => {
+      if (!isRowEligibleForShortage(r)) return acc;
+      const logged = parseFloat(r.total_hours) || 0;
+      return acc + (logged < TARGET_HOURS ? (TARGET_HOURS - logged) : 0);
+    }, 0);
+
+    // Create CSV content
+    const headers = ["Employee", "Email", "Date", "Punch In", "Punch Out", "Logged Hours", "Remaining Shortage", "Status"];
+    const rows = sortedRegs.map(r => {
+      const isMissingPunchOut = Boolean(r.clock_in && !r.clock_out) || r.status === "Not Punch Out";
+      const logged = !isMissingPunchOut ? (parseFloat(r.total_hours) || 0) : 0;
+      const eligible = isRowEligibleForShortage(r);
+      let shortageStr = "-";
+      if (eligible) {
+        const diff = TARGET_HOURS - logged;
+        shortageStr = diff > 0.05 ? `${formatHoursToHM(diff)} Short` : "Completed (0 remaining)";
+      } else if (isMissingPunchOut) {
+        shortageStr = "Punch Out Pending";
+      }
+
+      const punchInStr = r.clock_in ? new Date(r.clock_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "-";
+      const punchOutStr = isMissingPunchOut ? "Not Punch Out" : (r.clock_out ? new Date(r.clock_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "-");
+      const statusStr = isMissingPunchOut ? "Not Punch Out" : (r.status || "Present");
+
+      return [
+        r.user_name || "",
+        r.user_email || "",
+        r.date ? new Date(r.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : "",
+        punchInStr,
+        punchOutStr,
+        logged ? formatHoursToHM(logged) : (isMissingPunchOut ? "Pending Punch Out" : "0 min"),
+        shortageStr,
+        statusStr
+      ];
+    });
+
+    // Bottom overall Total Row
+    rows.push([
+      `TOTAL (${sortedRegs.length} Records)`,
+      "",
+      "",
+      "",
+      "",
+      formatHoursToHM(totalHoursDecimal),
+      totalShortageDecimal > 0.05 ? `${formatHoursToHM(totalShortageDecimal)} Short` : "0",
+      ""
+    ]);
+
+    // Employee-wise Summary
+    const empSummaryMap = new Map();
+    sortedRegs.forEach(r => {
+      const key = r.user_id || r.user_email || r.user_name || "Employee";
+      if (!empSummaryMap.has(key)) {
+        empSummaryMap.set(key, {
+          name: r.user_name || "Employee",
+          email: r.user_email || "",
+          count: 0,
+          total_hours: 0,
+          total_shortage: 0,
+          completed: 0,
+          not_punch_out: 0
+        });
+      }
+      const item = empSummaryMap.get(key);
+      item.count += 1;
+      const isMissingPunchOut = Boolean(r.clock_in && !r.clock_out) || r.status === "Not Punch Out";
+      const logged = !isMissingPunchOut ? (parseFloat(r.total_hours) || 0) : 0;
+      item.total_hours += logged;
+
+      if (isRowEligibleForShortage(r) && logged < TARGET_HOURS) {
+        item.total_shortage += (TARGET_HOURS - logged);
+      }
+      if (isMissingPunchOut) {
+        item.not_punch_out += 1;
+      } else if (r.clock_in && r.clock_out) {
+        item.completed += 1;
+      }
+    });
+
+    rows.push([]);
+    rows.push(["EMPLOYEE OVERALL ATTENDANCE & PUNCH SUMMARY", "", "", "", "", "", "", ""]);
+    rows.push(["Employee Name", "Employee Email", "Total Records", "Completed Punches", "Not Punched Out", "Total Logged Hours", "Total Remaining Shortage", ""]);
+
+    Array.from(empSummaryMap.values())
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+      .forEach(emp => {
+        rows.push([
+          emp.name,
+          emp.email,
+          emp.count,
+          emp.completed,
+          emp.not_punch_out,
+          formatHoursToHM(emp.total_hours),
+          emp.total_shortage > 0.05 ? `${formatHoursToHM(emp.total_shortage)} Short` : "0",
+          ""
+        ]);
+      });
+
+    const csvContent = "\uFEFF" + [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${(cell || "").toString().replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `punch_regularization_${regStartDate}_to_${regEndDate}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showToast("Excel export started", "success");
+  };
+
+  // Export to PDF
+  const exportToPDF = async () => {
+    if (regularizations.length === 0) {
+      showToast("No data to export", "error");
+      return;
+    }
+
+    try {
+      console.log('Starting PDF export...');
+      console.log('Number of records:', regularizations.length);
+
+      // Sort by employee name (A to Z) then Date (desc), excluding Super Admin
+      const sortedRegs = [...regularizations]
+        .filter(r => !isSuperAdminRecord(r))
+        .sort((a, b) => {
+          const nameA = (a.user_name || "").toLowerCase();
+          const nameB = (b.user_name || "").toLowerCase();
+          const nameCmp = nameA.localeCompare(nameB);
+          if (nameCmp !== 0) return nameCmp;
+          return (b.date || "").localeCompare(a.date || "");
+        });
+
+      const TARGET_HOURS = 8.5; // Standard 8.5 hours shift
+
+      // Helper: Determine if row is eligible for shortage calculation
+      // If employee is On Leave, Holiday, Absent, or has Not Punched Out, do NOT calculate normal shortage
+      const isRowEligibleForShortage = (r) => {
+        const statusLower = (r.status || "").toLowerCase();
+        const isMissingPunchOut = Boolean(r.clock_in && !r.clock_out);
+        if (isMissingPunchOut || r.status === "Not Punch Out") return false;
+        if (statusLower.includes("leave") || statusLower.includes("holiday") || statusLower.includes("absent")) return false;
+        if (!r.clock_in || r.clock_in === "-" || r.clock_in === "") return false;
+        return true;
+      };
+
+      const totalHoursDecimal = sortedRegs.reduce((acc, r) => {
+        const isMissingPunchOut = Boolean(r.clock_in && !r.clock_out) || r.status === "Not Punch Out";
+        if (isMissingPunchOut) return acc;
+        return acc + (parseFloat(r.total_hours) || 0);
+      }, 0);
+
+      const totalShortageDecimal = sortedRegs.reduce((acc, r) => {
+        if (!isRowEligibleForShortage(r)) return acc;
+        const logged = parseFloat(r.total_hours) || 0;
+        return acc + (logged < TARGET_HOURS ? (TARGET_HOURS - logged) : 0);
+      }, 0);
+
+      // Use html2pdf.js which is already installed
+      const { default: html2pdf } = await import('html2pdf.js');
+      console.log('html2pdf loaded successfully');
+
+      // Create a simple HTML table for PDF export
+      let tableHtml = `
+        <table style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 11px;">
+          <thead>
+            <tr style="background-color: #4f46e5; color: white;">
+              <th style="border: 1px solid #ddd; padding: 7px; text-align: left;">#</th>
+              <th style="border: 1px solid #ddd; padding: 7px; text-align: left;">Employee</th>
+              <th style="border: 1px solid #ddd; padding: 7px; text-align: left;">Email</th>
+              <th style="border: 1px solid #ddd; padding: 7px; text-align: left;">Date</th>
+              <th style="border: 1px solid #ddd; padding: 7px; text-align: left;">Punch In</th>
+              <th style="border: 1px solid #ddd; padding: 7px; text-align: left;">Punch Out</th>
+              <th style="border: 1px solid #ddd; padding: 7px; text-align: left;">Logged Hours</th>
+              <th style="border: 1px solid #ddd; padding: 7px; text-align: left;">Remaining Shortage</th>
+              <th style="border: 1px solid #ddd; padding: 7px; text-align: left;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      sortedRegs.forEach((r, idx) => {
+        const isMissingPunchOut = Boolean(r.clock_in && !r.clock_out) || r.status === "Not Punch Out";
+        const logged = !isMissingPunchOut ? (parseFloat(r.total_hours) || 0) : 0;
+        const eligible = isRowEligibleForShortage(r);
+        let shortageStr = "-";
+        let shortageColor = "#64748b";
+
+        if (eligible) {
+          const diff = TARGET_HOURS - logged;
+          shortageStr = diff > 0.05 ? `${formatHoursToHM(diff)} Short` : "Completed (0 remaining)";
+          shortageColor = diff > 0.05 ? "#dc2626" : "#16a34a";
+        } else if (isMissingPunchOut) {
+          shortageStr = "Punch Out Pending";
+          shortageColor = "#b91c1c";
+        }
+
+        const punchInStr = r.clock_in ? new Date(r.clock_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "-";
+        const punchOutStr = isMissingPunchOut ? '<span style="color: #dc2626; font-weight: 700; background: #fee2e2; padding: 2px 6px; border-radius: 4px;">Not Punch Out</span>' : (r.clock_out ? new Date(r.clock_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "-");
+        const statusHtml = isMissingPunchOut ? '<span style="color: #b91c1c; font-weight: 700; background: #fee2e2; padding: 2px 6px; border-radius: 4px;">Not Punch Out</span>' : (r.status || 'Present');
+
+        tableHtml += `
+          <tr style="border-bottom: 1px solid #ddd; page-break-inside: avoid;">
+            <td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${idx + 1}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; font-weight: 700;">${r.user_name || ''}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; color: #64748b; font-size: 10px;">${r.user_email || ''}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; white-space: nowrap;">${r.date ? new Date(r.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : ''}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; color: #16a34a; font-weight: 600;">${punchInStr}</td>
+            <td style="border: 1px solid #ddd; padding: 6px;">${punchOutStr}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; font-weight: 700;">${logged ? formatHoursToHM(logged) : (isMissingPunchOut ? "—" : '0 min')}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; font-weight: 700; color: ${shortageColor};">${shortageStr}</td>
+            <td style="border: 1px solid #ddd; padding: 6px;">${statusHtml}</td>
+          </tr>
+        `;
+      });
+
+      tableHtml += `
+          </tbody>
+          <tfoot>
+            <tr style="background: #f1f5f9; font-weight: 800; font-size: 11px; page-break-inside: avoid;">
+              <td colspan="6" style="border: 1px solid #ddd; padding: 8px; text-align: right; text-transform: uppercase;">
+                TOTAL (${sortedRegs.length} Records):
+              </td>
+              <td style="border: 1px solid #ddd; padding: 8px; color: #4f46e5; font-weight: 800;">
+                ${formatHoursToHM(totalHoursDecimal)}
+              </td>
+              <td style="border: 1px solid #ddd; padding: 8px; color: #dc2626; font-weight: 800;">
+                ${totalShortageDecimal > 0.05 ? `${formatHoursToHM(totalShortageDecimal)} Short` : '0'}
+              </td>
+              <td style="border: 1px solid #ddd; padding: 8px;"></td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+
+      // Employee Overall Summary Table
+      const empSummaryMap = new Map();
+      sortedRegs.forEach(r => {
+        const key = r.user_id || r.user_email || r.user_name || "Employee";
+        if (!empSummaryMap.has(key)) {
+          empSummaryMap.set(key, {
+            name: r.user_name || "Employee",
+            email: r.user_email || "",
+            count: 0,
+            total_hours: 0,
+            total_shortage: 0,
+            completed: 0,
+            not_punch_out: 0
+          });
+        }
+        const item = empSummaryMap.get(key);
+        item.count += 1;
+        const isMissingPunchOut = Boolean(r.clock_in && !r.clock_out) || r.status === "Not Punch Out";
+        const logged = !isMissingPunchOut ? (parseFloat(r.total_hours) || 0) : 0;
+        item.total_hours += logged;
+        if (isRowEligibleForShortage(r) && logged < TARGET_HOURS) {
+          item.total_shortage += (TARGET_HOURS - logged);
+        }
+        if (isMissingPunchOut) {
+          item.not_punch_out += 1;
+        } else if (r.clock_in && r.clock_out) {
+          item.completed += 1;
+        }
+      });
+
+      const empSummaryList = Array.from(empSummaryMap.values()).sort((a, b) => 
+        (a.name || "").localeCompare(b.name || "")
+      );
+
+      let empSummaryTableHtml = `
+        <div class="html2pdf__page-break" style="page-break-before: always; break-before: page; margin-top: 25px; padding-top: 15px;">
+          <h3 style="color: #1e293b; font-size: 14px; margin-bottom: 8px; border-bottom: 1.5px solid #cbd5e1; padding-bottom: 5px; page-break-after: avoid; break-after: avoid;">
+            Employee Overall Punch Summary (${empSummaryList.length} Employees)
+          </h3>
+          <table style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 11px;">
+            <thead>
+              <tr style="background-color: #f8fafc; color: #475569; border-bottom: 1.5px solid #cbd5e1;">
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">#</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">Employee</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">Email</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: center;">Total Records</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: center;">Completed</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: center;">Not Punch Out</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">Total Logged Hours</th>
+                <th style="border: 1px solid #ddd; padding: 6px; text-align: left;">Total Shortage Hours</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      empSummaryList.forEach((emp, index) => {
+        empSummaryTableHtml += `
+          <tr style="border-bottom: 1px solid #ddd; page-break-inside: avoid;">
+            <td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${index + 1}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; font-weight: 700;">${emp.name}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; color: #64748b; font-size: 10px;">${emp.email}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${emp.count}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; text-align: center; color: #16a34a; font-weight: 600;">${emp.completed}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; text-align: center; color: ${emp.not_punch_out > 0 ? '#dc2626' : '#64748b'}; font-weight: ${emp.not_punch_out > 0 ? '700' : '400'};">${emp.not_punch_out}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; font-weight: 700; color: #4f46e5;">${formatHoursToHM(emp.total_hours)}</td>
+            <td style="border: 1px solid #ddd; padding: 6px; font-weight: 700; color: ${emp.total_shortage > 0.05 ? '#dc2626' : '#16a34a'};">${emp.total_shortage > 0.05 ? `${formatHoursToHM(emp.total_shortage)} Short` : '0'}</td>
+          </tr>
+        `;
+      });
+
+      empSummaryTableHtml += `
+            </tbody>
+            <tfoot>
+              <tr style="background: #f1f5f9; font-weight: 800; font-size: 11px; page-break-inside: avoid;">
+                <td colspan="6" style="border: 1px solid #ddd; padding: 8px; text-align: right; text-transform: uppercase;">
+                  GRAND TOTAL LOGGED / SHORTAGE:
+                </td>
+                <td style="border: 1px solid #ddd; padding: 8px; color: #4f46e5;">
+                  ${formatHoursToHM(totalHoursDecimal)}
+                </td>
+                <td style="border: 1px solid #ddd; padding: 8px; color: #dc2626;">
+                  ${formatHoursToHM(totalShortageDecimal)} Short
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+
+      // Create a container element
+      const element = document.createElement('div');
+      element.style.padding = '20px';
+      element.style.width = '100%';
+      element.style.maxWidth = '1000px';
+      element.innerHTML = `
+        <div style="margin-bottom: 16px; border-bottom: 2px solid #4f46e5; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-end;">
+          <div>
+            <h2 style="color: #1e293b; margin: 0 0 4px 0; font-size: 18px;">Punch Regularization Report</h2>
+            <div style="color: #64748b; font-size: 11px; font-weight: 600;">Date Range: ${regStartDate} to ${regEndDate}</div>
+          </div>
+          <div style="text-align: right; font-size: 10px; color: #64748b;">
+            <div>Generated: ${new Date().toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' })} ${new Date().toLocaleTimeString()}</div>
+          </div>
+        </div>
+        ${tableHtml}
+        ${empSummaryTableHtml}
+      `;
+
+      console.log('Converting to PDF...');
+
+      // Convert to PDF with optimized settings
+      try {
+        await html2pdf(element, {
+          margin: 10,
+          filename: `punch_regularization_${regStartDate}_to_${regEndDate}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            scrollY: 0
+          },
+          jsPDF: {
+            unit: 'mm',
+            format: 'a4',
+            orientation: 'landscape',
+            compress: true
+          },
+          pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+        });
+
+        console.log('PDF export completed successfully');
+        showToast("PDF export started", "success");
+      } catch (error) {
+        console.error('Error generating PDF:', error);
+        showToast(`Failed to generate PDF: ${error.message}`, "error");
+      }
+    } catch (error) {
+      console.error('Error in PDF export:', error);
+      showToast(`Failed to generate PDF: ${error.message}`, "error");
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -1229,27 +1673,55 @@ export default function Attendance() {
               </div>
             </div>
 
-            <button
-              onClick={fetchRegularizations}
-              style={{
-                padding: "8px 14px",
-                borderRadius: "6px",
-                border: "1px solid var(--ui-border, #cbd5e1)",
-                background: "transparent",
-                color: "var(--text-main, #475569)",
-                fontSize: "13px",
-                fontWeight: "600",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px"
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-              </svg>
-              Refresh
-            </button>
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                onClick={exportToExcel}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: "6px",
+                  border: "1px solid var(--ui-border, #cbd5e1)",
+                  background: "transparent",
+                  color: "var(--text-main, #1e293b)",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px"
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <path d="M9 15l2 2 4-4"/>
+                </svg>
+                Export Excel
+              </button>
+              <button
+                onClick={exportToPDF}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: "6px",
+                  border: "1px solid var(--ui-border, #cbd5e1)",
+                  background: "transparent",
+                  color: "var(--text-main, #1e293b)",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px"
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <path d="M12 18v-6"/>
+                  <path d="M9 15l3 3 3-3"/>
+                </svg>
+                Export PDF
+              </button>
+            </div>
           </div>
 
           {/* PUNCH REGULARIZATION TABLE (1 Punch In, 2 Punch Out, Employee, Date, Status, Actions) */}
