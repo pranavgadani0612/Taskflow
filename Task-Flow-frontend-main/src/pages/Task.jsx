@@ -85,7 +85,7 @@ export default function Task({ isIssue = false }) {
   const [form, setForm] = useState({
     title: "",
     description: "",
-    assignedTo: "",
+    assignedTo: [],
     status: "",
     project: "",
     priority: "Medium",
@@ -450,7 +450,7 @@ export default function Task({ isIssue = false }) {
       setForm({
         title: "",
         description: "",
-        assignedTo: "",
+        assignedTo: [],
         status: "",
         project: "",
         priority: "Medium",
@@ -621,14 +621,19 @@ export default function Task({ isIssue = false }) {
     fd.append("title", task.title || "");
     fd.append("description", task.description || "");
 
-    // Fix: assignedTo is an array — extract first item's _id correctly
+    // Fix: assignedTo is an array — send all existing assignees, or new value if updating
     if (field === "assignedTo") {
-      fd.append("assignedTo", value);
+      // value is a single staffId (from quick-assign dropdown) — append to existing
+      const existing = Array.isArray(task.assignedTo)
+        ? task.assignedTo.map(u => u?._id || u?.id || u).filter(Boolean)
+        : [];
+      const newList = existing.includes(value) ? existing : [...existing, value];
+      newList.forEach(id => fd.append("assignedTo", id));
     } else {
       const existingAssigned = Array.isArray(task.assignedTo)
-        ? (task.assignedTo[0]?._id || task.assignedTo[0]?.id || task.assignedTo[0] || "")
-        : (task.assignedTo?._id || task.assignedTo || "");
-      if (existingAssigned) fd.append("assignedTo", existingAssigned);
+        ? task.assignedTo.map(u => u?._id || u?.id || u).filter(Boolean)
+        : [];
+      existingAssigned.forEach(id => fd.append("assignedTo", id));
     }
 
     fd.append("status", field === "status" ? value : (task.status?._id || task.status || ""));

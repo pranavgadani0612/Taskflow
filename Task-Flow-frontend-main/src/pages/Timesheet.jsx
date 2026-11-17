@@ -423,14 +423,25 @@ export default function Timesheet() {
     return Array.from(map.values()).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   }, [staffList, allTimesheets]);
 
-  // Filter projects to only those assigned to current user (unless SuperAdmin)
+  // Filter projects to those the current user is a member of, OR has a task/subtask assigned in
+  // (e.g. user is a member of B & C but was given a task in project D — D must still be selectable)
+  const currentUserId = (user?._id || user?.id)?.toString();
+  const isMine = (m) => {
+    const id = (m?._id || m?.id || m)?.toString();
+    return (id && id === currentUserId) || (m?.email && m.email === user?.email);
+  };
+  const myTaskProjectIds = new Set(
+    tasks
+      .filter(t =>
+        (Array.isArray(t.assignedTo) ? t.assignedTo : [t.assignedTo]).some(isMine) ||
+        (t.subtasks || []).some(s => isMine(s.assignedTo))
+      )
+      .map(t => (t.project?._id || t.project?.id || t.project)?.toString())
+      .filter(Boolean)
+  );
   const myAssignedProjects = projects.filter(p => {
     if (isSuperAdmin || isManager) return true;
-    return (p.assignedTo || []).some(m => {
-      const memberId = (m?._id || m?.id || m)?.toString();
-      const currentUserId = (user?._id || user?.id)?.toString();
-      return memberId === currentUserId || (m?.email && m.email === user?.email);
-    });
+    return (p.assignedTo || []).some(isMine) || myTaskProjectIds.has((p._id || p.id)?.toString());
   });
 
   const fetchDailyTimesheets = async (dateStr) => {

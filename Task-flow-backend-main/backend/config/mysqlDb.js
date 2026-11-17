@@ -622,6 +622,8 @@ async function initDB() {
     try { await connection.query(`ALTER TABLE tasks ADD COLUMN calculated_end_date DATE NULL`); } catch (e) {}
     try { await connection.query(`ALTER TABLE tasks ADD COLUMN assigned_by VARCHAR(100) NULL`); } catch (e) {}
     try { await connection.query(`ALTER TABLE tasks ADD COLUMN assigned_by_name VARCHAR(150) NULL`); } catch (e) {}
+    // assigned_to stores a JSON array of staff ids (multi-assignee) — VARCHAR(100) is too small
+    try { await connection.query(`ALTER TABLE tasks MODIFY COLUMN assigned_to TEXT NULL`); } catch (e) {}
     // ════════════════════════════════════════════════════════
     // EXPENSE & REIMBURSEMENT MODULE TABLES
     // ════════════════════════════════════════════════════════

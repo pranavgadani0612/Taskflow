@@ -261,7 +261,9 @@
   display: none;
 }
 
-@media (max-width: 768px) {
+/* Off-canvas sidebar up to 1024px: on tablets / small laptops a fixed 260px
+   sidebar left only ~560px for the page, squeezing every desktop layout. */
+@media (max-width: 1024px) {
   .mobile-hamburger-btn {
     display: inline-flex;
   }
@@ -305,7 +307,9 @@
     transform: translateX(0);
     box-shadow: 10px 0 35px rgba(0, 0, 0, 0.3);
   }
+}
 
+@media (max-width: 768px) {
   .content-area {
     padding: 0 12px 16px;
   }

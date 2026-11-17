@@ -21,8 +21,105 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }
 });
 
+// Helper: parse assigned_to JSON array from DB
+function parseAssignedTo(raw) {
+  if (!raw) return [];
+  if (typeof raw === "object" && Array.isArray(raw)) return raw;
+  const str = String(raw).trim();
+  if (!str || str === "null" || str === "undefined" || str === "[object Object]") return [];
+  if (str.startsWith("[")) {
+    try { return JSON.parse(str).filter(Boolean); } catch (_) {}
+  }
+  if (str.startsWith("{")) {
+    try {
+      const obj = JSON.parse(str);
+      return [obj._id || obj.id || str].filter(Boolean);
+    } catch (_) {}
+  }
+  return str ? [str] : [];
+}
+
+// Helper: build JSON array string to store multiple assignees
+function buildAssignedToVal(assignedTo) {
+  const extractId = (val) => {
+    if (!val) return "";
+    if (typeof val === "object") return val._id || val.id || "";
+    const str = String(val).trim();
+    if (!str || str === "[object Object]") return "";
+    try {
+      const parsed = JSON.parse(str);
+      if (typeof parsed === "object" && parsed !== null) return parsed._id || parsed.id || "";
+    } catch (_) {}
+    return str;
+  };
+
+  let ids = [];
+  if (Array.isArray(assignedTo)) {
+    ids = assignedTo.map(extractId).filter(Boolean);
+  } else if (assignedTo !== undefined && assignedTo !== null) {
+    const id = extractId(assignedTo);
+    if (id) ids = [id];
+  }
+  return ids.length > 0 ? JSON.stringify(ids) : null;
+}
+
+// Helper: fetch { [staffId]: { _id, id, name, email } } for all assignees in the given task rows
+async function buildStaffMap(rows) {
+  const ids = new Set();
+  (rows || []).forEach(r => parseAssignedTo(r?.assigned_to).forEach(id => ids.add(id)));
+  const staffMap = {};
+  if (ids.size === 0) return staffMap;
+  const idArr = Array.from(ids);
+  const [sRows] = await pool.query(
+    `SELECT id, name, email FROM staff WHERE id IN (${idArr.map(() => "?").join(",")})`,
+    idArr
+  );
+  sRows.forEach(s => { staffMap[s.id] = { _id: s.id, id: s.id, name: s.name, email: s.email || "" }; });
+  return staffMap;
+}
+
+// Helper: make sure every task assignee is also a member of the task's project.
+// Without this, a staff member assigned a task in a project they don't belong to
+// can't pick that project (and so can't log hours) in the timesheet.
+async function ensureAssigneesInProject(projectId, assignedToRaw) {
+  const assigneeIds = parseAssignedTo(assignedToRaw);
+  if (!projectId || assigneeIds.length === 0) return;
+  try {
+    const [pRows] = await pool.query("SELECT assigned_to FROM projects WHERE id = ? LIMIT 1", [projectId]);
+    if (pRows.length === 0) return;
+
+    let members = [];
+    try {
+      const raw = pRows[0].assigned_to;
+      members = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : [];
+    } catch (_) { members = []; }
+    if (!Array.isArray(members)) members = [];
+
+    const memberIds = new Set(members.map(m => String(m?._id || m?.id || m || "")).filter(Boolean));
+    const missing = assigneeIds.filter(id => !memberIds.has(String(id)));
+    if (missing.length === 0) return;
+
+    const [sRows] = await pool.query(
+      `SELECT id, name, email, position FROM staff WHERE id IN (${missing.map(() => "?").join(",")})`,
+      missing
+    );
+    if (sRows.length === 0) return;
+
+    const updated = [
+      ...members,
+      ...sRows.map(s => ({ _id: s.id, id: s.id, name: s.name, email: s.email || "", position: s.position || "" }))
+    ];
+    await pool.query("UPDATE projects SET assigned_to = ? WHERE id = ?", [JSON.stringify(updated), projectId]);
+    console.log(`[TASK] Auto-added ${sRows.map(s => s.name).join(", ")} to project ${projectId}`);
+  } catch (err) {
+    // Never fail the task save because of this
+    console.error("ensureAssigneesInProject error:", err.message);
+  }
+}
+
 // Helper: map a raw MySQL task row + its subtasks into frontend shape
-function formatTask(taskRow, subtasksList = []) {
+// staffMap: { [staffId]: { _id, name, email } } â€“ pre-fetched for multi-assignee
+function formatTask(taskRow, subtasksList = [], staffMap = {}) {
   const taskSubtasks = subtasksList
     .filter(s => s.task_id === taskRow.id)
     .map(s => ({
@@ -36,6 +133,23 @@ function formatTask(taskRow, subtasksList = []) {
       endDate: s.end_date,
       hours: parseFloat(s.hours) || 0
     }));
+
+  // Parse multi-assignee JSON array
+  const assignedIds = parseAssignedTo(taskRow.assigned_to);
+  let assignedToArr = [];
+  if (assignedIds.length > 0) {
+    assignedToArr = assignedIds.map(id => {
+      if (staffMap[id]) return staffMap[id];
+      // Fallback: use JOIN data for first assignee only
+      if (taskRow.assigned_id === id) {
+        return { _id: id, id, name: taskRow.assigned_name || "Staff", email: taskRow.assigned_email || "" };
+      }
+      return { _id: id, id, name: "Staff", email: "" };
+    });
+  } else if (taskRow.assigned_id) {
+    // Legacy single-value from JOIN (shouldn't happen post-migration)
+    assignedToArr = [{ _id: taskRow.assigned_id, id: taskRow.assigned_id, name: taskRow.assigned_name || "Staff", email: taskRow.assigned_email || "" }];
+  }
 
   return {
     _id: taskRow.id,
@@ -53,12 +167,7 @@ function formatTask(taskRow, subtasksList = []) {
       id: taskRow.project_id,
       name: taskRow.project_name || "Project"
     } : null,
-    assignedTo: taskRow.assigned_id ? [{
-      _id: taskRow.assigned_id,
-      id: taskRow.assigned_id,
-      name: taskRow.assigned_name || "Staff",
-      email: taskRow.assigned_email || ""
-    }] : [],
+    assignedTo: assignedToArr,
     type: taskRow.type || "task",
     startDate: taskRow.start_date,
     endDate: taskRow.end_date,
@@ -130,7 +239,7 @@ router.post("/repair-assign", authMiddleware, async (req, res) => {
 
     res.json({
       success: true,
-      message: `Fixed ${result.affectedRows} unassigned tasks → assigned to ${staffRows[0].name}`,
+      message: `Fixed ${result.affectedRows} unassigned tasks â†’ assigned to ${staffRows[0].name}`,
       affectedRows: result.affectedRows,
       staff: staffRows[0]
     });
@@ -155,18 +264,10 @@ router.get("/", authMiddleware, checkAnyPermission(["task_management", "issue"],
     // Filter by employee / assigned staff (single or multiple comma-separated)
     if (req.query.employee && req.query.employee !== "undefined" && req.query.employee !== "all") {
       const empList = String(req.query.employee).split(",").map(e => e.trim()).filter(Boolean);
-      if (empList.length === 1) {
-        conditions.push(`(
-          t.assigned_to = ? 
-          OR t.assigned_to LIKE ? 
-          OR t.id IN (SELECT task_id FROM subtasks WHERE assigned_to = ?)
-        )`);
-        params.push(empList[0], `%"id":"${empList[0]}"%`, empList[0]);
-      } else if (empList.length > 1) {
-        const orClauses = [];
-        empList.forEach(empId => {
-          orClauses.push(`(t.assigned_to = ? OR t.assigned_to LIKE ? OR t.id IN (SELECT task_id FROM subtasks WHERE assigned_to = ?))`);
-          params.push(empId, `%"id":"${empId}"%`, empId);
+      if (empList.length >= 1) {
+        const orClauses = empList.map(empId => {
+          params.push(`%${empId}%`, empId);
+          return `(t.assigned_to LIKE ? OR t.id IN (SELECT task_id FROM subtasks WHERE assigned_to = ?))`;
         });
         conditions.push(`(${orClauses.join(" OR ")})`);
       }
@@ -188,22 +289,22 @@ router.get("/", authMiddleware, checkAnyPermission(["task_management", "issue"],
       conditions.push(`(
         t.title LIKE ? 
         OR t.description LIKE ? 
-        OR s.name LIKE ? 
+
         OR p.name LIKE ? 
         OR t.id IN (SELECT task_id FROM subtasks WHERE title LIKE ?)
       )`);
-      params.push(s, s, s, s, s);
+      params.push(s, s, s, s);
     }
 
     // Role-based scoping: regular staff only see tasks assigned to them
     if (!userCanSeeAllTasks(req.user)) {
       conditions.push(`(
-        t.assigned_to = ?
-        OR t.assigned_to LIKE ?
+        t.assigned_to LIKE ?
         OR t.id IN (SELECT task_id FROM subtasks WHERE assigned_to = ?)
       )`);
-      params.push(req.user.id, `%\"id\":\"\\"%`, req.user.id);
+      params.push(`%${req.user.id}%`, req.user.id);
     }
+
 
     // Type filter
     if (req.query.type === "issue") {
@@ -213,19 +314,17 @@ router.get("/", authMiddleware, checkAnyPermission(["task_management", "issue"],
     }
 
     // Do not show tasks assigned to Inactive staff
-    conditions.push("(s.status = 'Active' OR s.status IS NULL)");
+    // assigned_to filter and type filter handle visibility
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const query = `
       SELECT t.*,
              p.id as project_id, p.name as project_name,
-             s.id as assigned_id, s.name as assigned_name, s.email as assigned_email,
              ab.id as assigned_by_id, ab.name as assigned_by_staff_name, ab.email as assigned_by_email,
              ts.id as status_id, ts.name as status_name
       FROM tasks t
       LEFT JOIN projects p ON t.project = p.id
-      LEFT JOIN staff s ON t.assigned_to = s.id
       LEFT JOIN staff ab ON t.assigned_by = ab.id
       LEFT JOIN task_statuses ts ON t.status = ts.id OR t.status = ts.name
       ${whereClause}
@@ -246,7 +345,8 @@ router.get("/", authMiddleware, checkAnyPermission(["task_management", "issue"],
       subtasks = subRows;
     }
 
-    const formatted = rows.map(r => formatTask(r, subtasks));
+    const staffMap = await buildStaffMap(rows);
+    const formatted = rows.map(r => formatTask(r, subtasks, staffMap));
 
     if (req.query.page && req.query.limit) {
       const page = parseInt(req.query.page) || 1;
@@ -303,26 +403,7 @@ router.post(
       const image = req.files?.image?.[0]?.filename || null;
       const video = req.files?.video?.[0]?.filename || null;
 
-      let assignedVal = "";
-      const extractId = (val) => {
-        if (!val) return "";
-        if (typeof val === "object") return val._id || val.id || "";
-        if (typeof val === "string") {
-          if (val === "[object Object]") return "";
-          try {
-            const parsed = JSON.parse(val);
-            if (typeof parsed === "object" && parsed !== null) return parsed._id || parsed.id || "";
-          } catch (_) {}
-          return val;
-        }
-        return String(val);
-      };
-
-      if (Array.isArray(assignedTo)) {
-        assignedVal = extractId(assignedTo[0]);
-      } else if (assignedTo !== undefined) {
-        assignedVal = extractId(assignedTo);
-      }
+      const assignedVal = buildAssignedToVal(assignedTo);
 
       const creatorId = req.user?._id ? req.user._id.toString() : (req.user?.id || null);
       const creatorName = req.user?.name || req.user?.email || "Admin";
@@ -393,8 +474,10 @@ router.post(
         [id]
       );
 
+      await ensureAssigneesInProject(rows[0]?.project, rows[0]?.assigned_to);
+
       const [subRows] = await pool.query("SELECT * FROM subtasks WHERE task_id = ?", [id]);
-      const formatted = formatTask(rows[0], subRows);
+      const formatted = formatTask(rows[0], subRows, await buildStaffMap(rows));
 
       const io = req.app.get("io");
       if (io) io.emit("task:created", formatted);
@@ -437,26 +520,7 @@ router.put(
         return res.status(400).json({ error: "Estimated hours cannot be negative!" });
       }
 
-      let assignedVal = undefined;
-      const extractId = (val) => {
-        if (!val) return "";
-        if (typeof val === "object") return val._id || val.id || "";
-        if (typeof val === "string") {
-          if (val === "[object Object]") return "";
-          try {
-            const parsed = JSON.parse(val);
-            if (typeof parsed === "object" && parsed !== null) return parsed._id || parsed.id || "";
-          } catch (_) {}
-          return val;
-        }
-        return String(val);
-      };
-
-      if (Array.isArray(assignedTo)) {
-        assignedVal = extractId(assignedTo[0]);
-      } else if (assignedTo !== undefined) {
-        assignedVal = extractId(assignedTo);
-      }
+      const assignedVal = assignedTo !== undefined ? buildAssignedToVal(assignedTo) : undefined;
 
       // Use NULLIF so that empty-string values don't overwrite existing data
       await pool.query(
@@ -519,8 +583,10 @@ router.put(
 
       if (!rows || rows.length === 0) return res.status(404).json({ error: "Task not found" });
 
+      await ensureAssigneesInProject(rows[0]?.project, rows[0]?.assigned_to);
+
       const [subRows] = await pool.query("SELECT * FROM subtasks WHERE task_id = ?", [taskId]);
-      const formatted = formatTask(rows[0], subRows);
+      const formatted = formatTask(rows[0], subRows, await buildStaffMap(rows));
 
       const io = req.app.get("io");
       if (io) io.emit("task:updated", formatted);
@@ -598,7 +664,7 @@ router.post("/:id/subtasks", authMiddleware, async (req, res) => {
     );
 
     const [subRows] = await pool.query("SELECT * FROM subtasks WHERE task_id = ?", [taskId]);
-    const formatted = formatTask(rows[0], subRows);
+    const formatted = formatTask(rows[0], subRows, await buildStaffMap(rows));
 
     const io = req.app.get("io");
     if (io) io.emit("task:updated", formatted);
@@ -666,7 +732,7 @@ router.patch("/:id/subtasks/:subtaskId", authMiddleware, async (req, res) => {
     );
 
     const [subRows] = await pool.query("SELECT * FROM subtasks WHERE task_id = ?", [taskId]);
-    const formatted = formatTask(rows[0], subRows);
+    const formatted = formatTask(rows[0], subRows, await buildStaffMap(rows));
 
     const io = req.app.get("io");
     if (io) io.emit("task:updated", formatted);
@@ -702,7 +768,7 @@ router.delete("/:id/subtasks/:subtaskId", authMiddleware, async (req, res) => {
     );
 
     const [subRows] = await pool.query("SELECT * FROM subtasks WHERE task_id = ?", [taskId]);
-    const formatted = formatTask(rows[0], subRows);
+    const formatted = formatTask(rows[0], subRows, await buildStaffMap(rows));
 
     const io = req.app.get("io");
     if (io) io.emit("task:updated", formatted);
@@ -714,3 +780,5 @@ router.delete("/:id/subtasks/:subtaskId", authMiddleware, async (req, res) => {
 });
 
 module.exports = router;
+
+

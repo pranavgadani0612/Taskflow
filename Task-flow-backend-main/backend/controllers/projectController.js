@@ -133,7 +133,8 @@ exports.getProjects = async (req, res) => {
         `SELECT DISTINCT project FROM tasks 
          WHERE (assigned_to = ? OR assigned_to LIKE ? OR id IN (SELECT task_id FROM subtasks WHERE assigned_to = ?))
          AND project IS NOT NULL`,
-        [userId, `%"id":"${userId}"%`, userId]
+        // assigned_to is a JSON array of ids (["staff_a","staff_b"]); legacy rows may hold {"id":"..."} or a bare id
+        [userId, `%"${userId}"%`, userId]
       );
       const userTaskProjectIds = new Set(taskProjects.map(tp => String(tp.project)));
 

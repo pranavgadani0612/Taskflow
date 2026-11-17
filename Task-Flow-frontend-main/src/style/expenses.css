@@ -353,7 +353,10 @@
   border-radius: 16px;
   border: 1px solid var(--ui-border, #e2e8f0);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
-  overflow: hidden;
+  /* Table is wider than tablet/small-laptop screens: scroll sideways instead of clipping columns */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .expense-table {
