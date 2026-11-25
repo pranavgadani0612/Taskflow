@@ -1,8 +1,9 @@
 $ErrorActionPreference = "Stop"
-$staging = "d:\Documents\Desktop\Taskflow\staging_hostinger_package"
-$sourceBackend = "d:\Documents\Desktop\Taskflow\task-flow-backend-main"
-$sourceFrontend = "d:\Documents\Desktop\Taskflow\task-flow-frontend-main"
-$destinationZip = "d:\Documents\Desktop\Taskflow\Hostinger_Full_Deployment_Package.zip"
+$baseDir = $PSScriptRoot
+$staging = Join-Path $baseDir "staging_hostinger_package"
+$sourceBackend = Join-Path $baseDir "Task-flow-backend-main"
+$sourceFrontend = Join-Path $baseDir "Task-Flow-frontend-main"
+$destinationZip = Join-Path $baseDir "Hostinger_Full_Deployment_Package.zip"
 
 Write-Host "0. Building Frontend with npm run build..."
 Push-Location $sourceFrontend
@@ -30,12 +31,16 @@ foreach ($f in $rootFiles) {
     }
 }
 
-if (Test-Path "d:\Documents\Desktop\Taskflow\taskflow_database.sql") {
-    Copy-Item -Path "d:\Documents\Desktop\Taskflow\taskflow_database.sql" -Destination "$staging\taskflow_database.sql" -Force
+if (Test-Path "$baseDir\taskflow_database.sql") {
+    Copy-Item -Path "$baseDir\taskflow_database.sql" -Destination "$staging\taskflow_database.sql" -Force
 }
 
-if (Test-Path "d:\Documents\Desktop\Taskflow\TaskFlow_Executive_Workflow_Guide.pdf") {
-    Copy-Item -Path "d:\Documents\Desktop\Taskflow\TaskFlow_Executive_Workflow_Guide.pdf" -Destination "$staging\TaskFlow_Executive_Workflow_Guide.pdf" -Force
+if (Test-Path "$baseDir\website_enquiries.sql") {
+    Copy-Item -Path "$baseDir\website_enquiries.sql" -Destination "$staging\website_enquiries.sql" -Force
+}
+
+if (Test-Path "$baseDir\TaskFlow_Executive_Workflow_Guide.pdf") {
+    Copy-Item -Path "$baseDir\TaskFlow_Executive_Workflow_Guide.pdf" -Destination "$staging\TaskFlow_Executive_Workflow_Guide.pdf" -Force
 }
 
 Write-Host "3. Copying backend folder (excluding node_modules)..."

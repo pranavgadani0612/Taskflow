@@ -240,6 +240,11 @@ app.use("/api/payroll", require("./routes/payrollRoutes"));
 app.use("/api/client-reports", require("./routes/clientReportRoutes"));
 app.use("/api/overtime", require("./routes/overtimeRoutes"));
 
+// 🌐 Website (padhyasoft.com) enquiries + chatbot conversations
+const websiteEnquiryRoutes = require("./routes/websiteEnquiryRoutes");
+app.use("/api/public", websiteEnquiryRoutes.publicRouter);
+app.use("/api/website-enquiries", websiteEnquiryRoutes.adminRouter);
+
 
 // Get current user permissions
 app.get("/api/user-permissions", authMiddleware, getUserPermissions);

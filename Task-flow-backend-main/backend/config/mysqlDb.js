@@ -1047,6 +1047,56 @@ async function initDB() {
       await connection.query(`ALTER TABLE clients ADD COLUMN currency VARCHAR(10) DEFAULT 'USD'`);
     } catch (_) {}
 
+    // 🌐 Website enquiries – consultation form + chatbot bookings from padhyasoft.com
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS website_enquiries (
+        id VARCHAR(60) PRIMARY KEY,
+        company_id VARCHAR(50) DEFAULT 'default_company',
+        type VARCHAR(30) NOT NULL DEFAULT 'consultation',
+        name VARCHAR(150) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        phone VARCHAR(50) NOT NULL,
+        company VARCHAR(150),
+        service VARCHAR(150),
+        engagement VARCHAR(100),
+        budget VARCHAR(100),
+        timeline VARCHAR(100),
+        message TEXT,
+        source VARCHAR(40) NOT NULL DEFAULT 'Website form',
+        page VARCHAR(255),
+        chat_session VARCHAR(80),
+        status VARCHAR(30) NOT NULL DEFAULT 'New',
+        assigned_to VARCHAR(100),
+        assigned_name VARCHAR(150),
+        notes TEXT,
+        client_id VARCHAR(100),
+        ip_address VARCHAR(50),
+        user_agent VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_wenq_status (status),
+        INDEX idx_wenq_created (created_at),
+        INDEX idx_wenq_email (email),
+        INDEX idx_wenq_session (chat_session)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 🌐 Website chatbot – every message a visitor sends and every bot reply
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS website_chat_messages (
+        id VARCHAR(60) PRIMARY KEY,
+        session_id VARCHAR(80) NOT NULL,
+        sender VARCHAR(10) NOT NULL,
+        text TEXT NOT NULL,
+        page VARCHAR(255),
+        ip_address VARCHAR(50),
+        user_agent VARCHAR(255),
+        created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
+        INDEX idx_wchat_session (session_id, created_at),
+        INDEX idx_wchat_created (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     connection.release();
     console.log("✅ MySQL Tables ready in phpMyAdmin (taskflow_db)");
   } catch (err) {

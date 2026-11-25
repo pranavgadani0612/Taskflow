@@ -35,6 +35,7 @@ import HolidayCalendar from "./pages/HolidayCalendar";
 import WfhRequests from "./pages/WfhRequests";
 import EmployeeDirectory from "./pages/EmployeeDirectory";
 import AuditLogs from "./pages/AuditLogs";
+import WebsiteEnquiries from "./pages/WebsiteEnquiries";
 import Assets from "./pages/Assets";
 import Payroll from "./pages/Payroll";
 import ClientInvoicing from "./pages/ClientInvoicing";
@@ -117,6 +118,7 @@ function AppRoutes() {
         <Route path="wfh" element={hasPermission("wfh_management", "read") ? <WfhRequests /> : <Navigate to="/" />} />
         <Route path="directory" element={hasPermission("employee_directory", "read") ? <EmployeeDirectory /> : <Navigate to="/" />} />
         <Route path="audit-logs" element={hasPermission("audit_logs", "read") ? <AuditLogs /> : <Navigate to="/" />} />
+        <Route path="website-enquiries" element={hasPermission("website_enquiries", "read") ? <WebsiteEnquiries /> : <Navigate to="/" />} />
         <Route path="assets" element={hasPermission("asset_management", "read") ? <Assets /> : <Navigate to="/" />} />
         <Route path="payroll" element={hasPermission("payroll_management", "read") ? <Payroll /> : <Navigate to="/" />} />
         <Route path="client-reports" element={hasPermission("client_reports", "read") ? <ClientInvoicing /> : <Navigate to="/" />} />
