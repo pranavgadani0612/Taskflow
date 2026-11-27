@@ -1097,6 +1097,7 @@ async function initDB() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+<<<<<<< HEAD
     // 🌐 Website FAQs – the questions shown on padhyasoft.com pages and used by the website chatbot.
     // page_key = home | about | services | contact | <service slug, e.g. trackandtracesystem>
     const [faqTable] = await connection.query("SHOW TABLES LIKE 'website_faqs'");
@@ -1160,6 +1161,8 @@ async function initDB() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
     connection.release();
     console.log("✅ MySQL Tables ready in phpMyAdmin (taskflow_db)");
   } catch (err) {

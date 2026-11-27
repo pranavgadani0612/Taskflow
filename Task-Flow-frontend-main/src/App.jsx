@@ -119,9 +119,13 @@ function AppRoutes() {
         <Route path="wfh" element={hasPermission("wfh_management", "read") ? <WfhRequests /> : <Navigate to="/" />} />
         <Route path="directory" element={hasPermission("employee_directory", "read") ? <EmployeeDirectory /> : <Navigate to="/" />} />
         <Route path="audit-logs" element={hasPermission("audit_logs", "read") ? <AuditLogs /> : <Navigate to="/" />} />
+<<<<<<< HEAD
         <Route path="website-enquiries" element={hasPermission("website_enquiries", "read") ? <WebsiteEnquiries view="enquiries" /> : <Navigate to="/" />} />
         <Route path="website-chats" element={hasPermission("website_enquiries", "read") ? <WebsiteEnquiries view="chats" /> : <Navigate to="/" />} />
         <Route path="website-faqs" element={hasPermission("website_enquiries", "read") ? <WebsiteEnquiries view="faqs" /> : <Navigate to="/" />} />
+=======
+        <Route path="website-enquiries" element={hasPermission("website_enquiries", "read") ? <WebsiteEnquiries /> : <Navigate to="/" />} />
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
         <Route path="assets" element={hasPermission("asset_management", "read") ? <Assets /> : <Navigate to="/" />} />
         <Route path="payroll" element={hasPermission("payroll_management", "read") ? <Payroll /> : <Navigate to="/" />} />
         <Route path="client-reports" element={hasPermission("client_reports", "read") ? <ClientInvoicing /> : <Navigate to="/" />} />

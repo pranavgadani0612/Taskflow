@@ -4,7 +4,10 @@ import { useToast } from "../contexts/ToastContext";
 import { useSocket } from "../contexts/SocketContext";
 import ConfirmModal from "../components/common/ConfirmModal";
 import Pagination from "../components/common/Pagination";
+<<<<<<< HEAD
 import WebsiteFaqs from "./WebsiteFaqs";
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
 import "../style/main.css";
 
 /* Website enquiries (consultation form + chatbot bookings) and chatbot conversations from padhyasoft.com */
@@ -63,12 +66,17 @@ function SourceBadge({ source }) {
 }
 
 /* ======================= transcript viewer ======================= */
+<<<<<<< HEAD
 function Transcript({ sessionId, onSavedCustom }) {
   const { showToast } = useToast();
   const [msgs, setMsgs] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
 
+=======
+function Transcript({ sessionId }) {
+  const [msgs, setMsgs] = useState(null);
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
   useEffect(() => {
     let alive = true;
     API.get(`/website-enquiries/chats/${encodeURIComponent(sessionId)}`)
@@ -77,6 +85,7 @@ function Transcript({ sessionId, onSavedCustom }) {
     return () => { alive = false; };
   }, [sessionId]);
 
+<<<<<<< HEAD
   const saveCustomReply = async (msg, body) => {
     setSaving(true);
     try {
@@ -137,6 +146,23 @@ function Transcript({ sessionId, onSavedCustom }) {
                 />
               </div>
             )}
+=======
+  if (msgs === null) return <div style={S.muted}>Loading conversation...</div>;
+  if (!msgs.length) return <div style={S.muted}>No messages saved for this conversation.</div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "420px", overflowY: "auto", padding: "4px" }}>
+      {msgs.map((m) => {
+        const user = m.sender === "user";
+        const { date, time } = formatIST(m.created_at);
+        return (
+          <div key={m.id} style={{ alignSelf: user ? "flex-end" : "flex-start", maxWidth: "78%" }}>
+            <div style={{ padding: "8px 12px", borderRadius: "12px", fontSize: "13px", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word", background: user ? "#4f46e5" : "var(--ui-bg, #f1f5f9)", color: user ? "#fff" : "var(--text-main, #1e293b)", border: user ? "none" : "1px solid var(--ui-border, #e2e8f0)" }}>
+              {m.text}
+            </div>
+            <div style={{ ...S.muted, fontSize: "10px", marginTop: "2px", textAlign: user ? "right" : "left" }}>
+              {user ? "Visitor" : "Bot"} · {date} {time}
+            </div>
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
           </div>
         );
       })}
@@ -145,7 +171,11 @@ function Transcript({ sessionId, onSavedCustom }) {
 }
 
 /* ======================= enquiry detail row ======================= */
+<<<<<<< HEAD
 function EnquiryDetail({ e, onSaved, onConvert, onDelete }) {
+=======
+function EnquiryDetail({ e, staff, onSaved, onConvert, onDelete }) {
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
   const { showToast } = useToast();
   const [notes, setNotes] = useState(e.notes || "");
   const [saving, setSaving] = useState(false);
@@ -433,7 +463,11 @@ function EnquiriesTab() {
                     {isOpen && (
                       <tr>
                         <td colSpan={9} style={{ padding: 0, borderBottom: "1px solid var(--ui-border, #e2e8f0)" }}>
+<<<<<<< HEAD
                           <EnquiryDetail e={e} onSaved={replaceRow} onConvert={(x) => setConfirm({ type: "convert", e: x })} onDelete={(x) => setConfirm({ type: "delete", e: x })} />
+=======
+                          <EnquiryDetail e={e} staff={staff} onSaved={replaceRow} onConvert={(x) => setConfirm({ type: "convert", e: x })} onDelete={(x) => setConfirm({ type: "delete", e: x })} />
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
                         </td>
                       </tr>
                     )}
@@ -467,6 +501,7 @@ function EnquiriesTab() {
 }
 
 /* ======================= Chatbot conversations tab ======================= */
+<<<<<<< HEAD
 function ChatbotAnswerForm({ initialQuestion, initialAnswer, onSave, onCancel, saving }) {
   const [q, setQ] = useState(initialQuestion || "");
   const [a, setA] = useState(initialAnswer || "");
@@ -495,6 +530,10 @@ function ChatbotAnswerForm({ initialQuestion, initialAnswer, onSave, onCancel, s
 function ChatsTab() {
   const { showToast } = useToast();
   const [subTab, setSubTab] = useState("conversations"); // "conversations" | "unanswered"
+=======
+function ChatsTab() {
+  const { showToast } = useToast();
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
   const [chats, setChats] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -504,6 +543,7 @@ function ChatsTab() {
   const [toDelete, setToDelete] = useState(null); // a session id, or BULK for the selected ones
   const sel = useSelection(chats.map((c) => c.session_id));
 
+<<<<<<< HEAD
   const [unanswered, setUnanswered] = useState([]);
   const [uqCounts, setUqCounts] = useState({ pending: 0, answered: 0, ignored: 0, all: 0 });
   const [uqStatus, setUqStatus] = useState("pending");
@@ -511,6 +551,8 @@ function ChatsTab() {
   const [answeringId, setAnsweringId] = useState(null);
   const [savingAnswer, setSavingAnswer] = useState(false);
 
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
   const load = useCallback(async () => {
     try {
       setLoading(true);
@@ -526,6 +568,7 @@ function ChatsTab() {
     }
   }, [page, search, showToast]);
 
+<<<<<<< HEAD
   const loadUnanswered = useCallback(async (st = uqStatus) => {
     try {
       setUqLoading(true);
@@ -539,11 +582,14 @@ function ChatsTab() {
     }
   }, [showToast, uqStatus]);
 
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
   useEffect(() => {
     const t = setTimeout(load, search ? 300 : 0);
     return () => clearTimeout(t);
   }, [load, search]);
 
+<<<<<<< HEAD
   useEffect(() => {
     loadUnanswered(uqStatus);
   }, [loadUnanswered, uqStatus]);
@@ -582,6 +628,8 @@ function ChatsTab() {
     }
   };
 
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
   const doDelete = async () => {
     const sid = toDelete;
     setToDelete(null);
@@ -605,6 +653,7 @@ function ChatsTab() {
 
   return (
     <>
+<<<<<<< HEAD
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "16px" }}>
         <button style={S.chip(subTab === "conversations")} onClick={() => setSubTab("conversations")}>
           Conversations <span style={{ opacity: 0.75 }}>{total}</span>
@@ -680,6 +729,8 @@ function ChatsTab() {
         </>
       ) : (
         <>
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
       <div style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", padding: "14px 18px", marginBottom: "16px", flexWrap: "wrap" }}>
         <span style={S.muted}>Every message a visitor typed in the website chatbot, with the bot's replies.</span>
         <input value={search} onChange={(ev) => { setSearch(ev.target.value); setPage(1); }} placeholder="Search messages..." style={{ ...S.input, width: "240px" }} />
@@ -739,7 +790,11 @@ function ChatsTab() {
                     {isOpen && (
                       <tr>
                         <td colSpan={7} style={{ padding: "14px", background: "var(--ui-bg, #f8fafc)", borderBottom: "1px solid var(--ui-border, #e2e8f0)" }}>
+<<<<<<< HEAD
                           <Transcript sessionId={c.session_id} onSavedCustom={() => loadUnanswered(uqStatus)} />
+=======
+                          <Transcript sessionId={c.session_id} />
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
                           <div style={{ marginTop: "10px", textAlign: "right" }}>
                             <button style={{ ...S.btn, color: "#dc2626", borderColor: "rgba(239,68,68,.35)" }} onClick={() => setToDelete(c.session_id)}>Delete conversation</button>
                           </div>
@@ -764,13 +819,17 @@ function ChatsTab() {
         message={toDelete === BULK ? `Delete ${sel.count} selected conversation${sel.count === 1 ? "" : "s"} and all their messages? This cannot be undone.` : "Delete this chatbot conversation? This cannot be undone."}
         confirmText="Delete"
       />
+<<<<<<< HEAD
         </>
       )}
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
     </>
   );
 }
 
 /* ======================= page ======================= */
+<<<<<<< HEAD
 /* One page per item of the "Padhya Enquiry" sidebar group:
    view="enquiries" → /website-enquiries, view="chats" → /website-chats, view="faqs" → /website-faqs */
 const VIEWS = {
@@ -781,17 +840,35 @@ const VIEWS = {
 
 export default function WebsiteEnquiries({ view = "enquiries" }) {
   const v = VIEWS[view] || VIEWS.enquiries;
+=======
+export default function WebsiteEnquiries() {
+  const [tab, setTab] = useState("enquiries");
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
   return (
     <div style={S.page}>
       <div style={{ marginBottom: "20px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+<<<<<<< HEAD
           <h1 style={{ fontSize: "24px", fontWeight: 800, margin: 0, ...S.main }}>{v.title}</h1>
         </div>
         <p style={{ ...S.muted, fontSize: "14px", margin: "6px 0 0" }}>{v.sub}</p>
       </div>
 
       {view === "faqs" ? <WebsiteFaqs /> : view === "chats" ? <ChatsTab /> : <EnquiriesTab />}
+=======
+          <h1 style={{ fontSize: "24px", fontWeight: 800, margin: 0, ...S.main }}>Website Enquiries</h1>
+        </div>
+        <p style={{ ...S.muted, fontSize: "14px", margin: "6px 0 0" }}>Consultation requests and chatbot conversations from padhyasoft.com.</p>
+      </div>
+
+      <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+        <button style={S.chip(tab === "enquiries")} onClick={() => setTab("enquiries")}>Enquiries</button>
+        <button style={S.chip(tab === "chats")} onClick={() => setTab("chats")}>Chatbot conversations</button>
+      </div>
+
+      {tab === "enquiries" ? <EnquiriesTab /> : <ChatsTab />}
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
     </div>
   );
 }

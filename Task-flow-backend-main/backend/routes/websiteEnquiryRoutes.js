@@ -1,11 +1,17 @@
 /* =====================================================================
+<<<<<<< HEAD
 /* =====================================================================
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
    WEBSITE ENQUIRIES – leads + chatbot conversations from padhyasoft.com
    ---------------------------------------------------------------------
    Public  (no login, called by the website):
      POST /api/public/website-enquiry     consultation form / chatbot booking
      POST /api/public/website-chat        one chatbot message (visitor or bot)
+<<<<<<< HEAD
      GET  /api/public/website-faqs        active FAQs for every website page (website build + live refresh)
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
    Admin   (login + "website_enquiries" permission; Super Admin always):
      GET    /api/website-enquiries                 list + filters + status counts
      PUT    /api/website-enquiries/:id             status / assignee / notes
@@ -14,11 +20,14 @@
      GET    /api/website-enquiries/chats           chatbot conversations (one row per visitor session)
      GET    /api/website-enquiries/chats/:session  full transcript
      DELETE /api/website-enquiries/chats/:session
+<<<<<<< HEAD
      GET    /api/website-enquiries/faqs            all website FAQs (active + hidden)
      POST   /api/website-enquiries/faqs            add a FAQ
      PUT    /api/website-enquiries/faqs/:id        edit / show / hide
      DELETE /api/website-enquiries/faqs/:id
      POST   /api/website-enquiries/faqs/reorder    new order for one page
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
    ===================================================================== */
 const express = require("express");
 const authMiddleware = require("../middleware/auth");
@@ -126,6 +135,7 @@ publicRouter.post("/website-chat", limiter(200, 10 * 60 * 1000), async (req, res
   }
 });
 
+<<<<<<< HEAD
 /* ---------- website FAQs (read by padhyasoft.com when it is built and when a visitor opens a page) ---------- */
 const FAQ_DEFAULTS = require("../config/websiteFaqDefaults.json");
 const FAQ_PAGE_KEYS = Object.keys(FAQ_DEFAULTS.pages || {});            // home, about, services, contact
@@ -197,6 +207,8 @@ publicRouter.post("/website-unanswered", limiter(100, 10 * 60 * 1000), async (re
   }
 });
 
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
 /* =====================================================================
    ADMIN ROUTES
    ===================================================================== */
@@ -300,6 +312,7 @@ adminRouter.post("/chats/bulk-delete", checkPermission(PERM, "delete"), async (r
   }
 });
 
+<<<<<<< HEAD
 /* ---------- website FAQs (defined before /:id routes) ---------- */
 const faqInput = (b, partial) => {
   const out = {};
@@ -518,6 +531,8 @@ adminRouter.delete("/unanswered/:id", checkPermission(PERM, "delete"), async (re
   }
 });
 
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
 /* ---------- enquiries ---------- */
 // delete several enquiries at once
 adminRouter.post("/bulk-delete", checkPermission(PERM, "delete"), async (req, res) => {

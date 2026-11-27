@@ -244,7 +244,10 @@ app.use("/api/overtime", require("./routes/overtimeRoutes"));
 const websiteEnquiryRoutes = require("./routes/websiteEnquiryRoutes");
 app.use("/api/public", websiteEnquiryRoutes.publicRouter);
 app.use("/api/website-enquiries", websiteEnquiryRoutes.adminRouter);
+<<<<<<< HEAD
 app.use("/api/sidebar-settings", require("./routes/sidebarRoutes"));
+=======
+>>>>>>> a93f31fb1a8946888b22ee7c71720679c8bc94b1
 
 
 // Get current user permissions
