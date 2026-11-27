@@ -35,10 +35,12 @@ import HolidayCalendar from "./pages/HolidayCalendar";
 import WfhRequests from "./pages/WfhRequests";
 import EmployeeDirectory from "./pages/EmployeeDirectory";
 import AuditLogs from "./pages/AuditLogs";
+import WebsiteEnquiries from "./pages/WebsiteEnquiries";
 import Assets from "./pages/Assets";
 import Payroll from "./pages/Payroll";
 import ClientInvoicing from "./pages/ClientInvoicing";
 import ProjectReport from "./pages/ProjectReport";
+import SidebarManager from "./pages/SidebarManager";
 
 import { CompanyProvider } from "./contexts/CompanyContext";
 import PWAInstallPrompt from "./components/common/PWAInstallPrompt";
@@ -117,10 +119,14 @@ function AppRoutes() {
         <Route path="wfh" element={hasPermission("wfh_management", "read") ? <WfhRequests /> : <Navigate to="/" />} />
         <Route path="directory" element={hasPermission("employee_directory", "read") ? <EmployeeDirectory /> : <Navigate to="/" />} />
         <Route path="audit-logs" element={hasPermission("audit_logs", "read") ? <AuditLogs /> : <Navigate to="/" />} />
+        <Route path="website-enquiries" element={hasPermission("website_enquiries", "read") ? <WebsiteEnquiries view="enquiries" /> : <Navigate to="/" />} />
+        <Route path="website-chats" element={hasPermission("website_enquiries", "read") ? <WebsiteEnquiries view="chats" /> : <Navigate to="/" />} />
+        <Route path="website-faqs" element={hasPermission("website_enquiries", "read") ? <WebsiteEnquiries view="faqs" /> : <Navigate to="/" />} />
         <Route path="assets" element={hasPermission("asset_management", "read") ? <Assets /> : <Navigate to="/" />} />
         <Route path="payroll" element={hasPermission("payroll_management", "read") ? <Payroll /> : <Navigate to="/" />} />
         <Route path="client-reports" element={hasPermission("client_reports", "read") ? <ClientInvoicing /> : <Navigate to="/" />} />
         <Route path="project-report" element={isSuperAdmin ? <ProjectReport /> : <Navigate to="/" />} />
+        <Route path="sidebar-manager" element={isOwnerOrAdmin || hasPermission("sidebar_management", "read") ? <SidebarManager /> : <Navigate to="/" />} />
         <Route path="profile" element={<Profile />} />
 
         <Route path="policies" element={<Navigate to="/profile?tab=policies" replace />} />

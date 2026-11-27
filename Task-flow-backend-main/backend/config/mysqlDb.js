@@ -1047,6 +1047,119 @@ async function initDB() {
       await connection.query(`ALTER TABLE clients ADD COLUMN currency VARCHAR(10) DEFAULT 'USD'`);
     } catch (_) {}
 
+    // 🌐 Website enquiries – consultation form + chatbot bookings from padhyasoft.com
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS website_enquiries (
+        id VARCHAR(60) PRIMARY KEY,
+        company_id VARCHAR(50) DEFAULT 'default_company',
+        type VARCHAR(30) NOT NULL DEFAULT 'consultation',
+        name VARCHAR(150) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        phone VARCHAR(50) NOT NULL,
+        company VARCHAR(150),
+        service VARCHAR(150),
+        engagement VARCHAR(100),
+        budget VARCHAR(100),
+        timeline VARCHAR(100),
+        message TEXT,
+        source VARCHAR(40) NOT NULL DEFAULT 'Website form',
+        page VARCHAR(255),
+        chat_session VARCHAR(80),
+        status VARCHAR(30) NOT NULL DEFAULT 'New',
+        assigned_to VARCHAR(100),
+        assigned_name VARCHAR(150),
+        notes TEXT,
+        client_id VARCHAR(100),
+        ip_address VARCHAR(50),
+        user_agent VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_wenq_status (status),
+        INDEX idx_wenq_created (created_at),
+        INDEX idx_wenq_email (email),
+        INDEX idx_wenq_session (chat_session)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 🌐 Website chatbot – every message a visitor sends and every bot reply
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS website_chat_messages (
+        id VARCHAR(60) PRIMARY KEY,
+        session_id VARCHAR(80) NOT NULL,
+        sender VARCHAR(10) NOT NULL,
+        text TEXT NOT NULL,
+        page VARCHAR(255),
+        ip_address VARCHAR(50),
+        user_agent VARCHAR(255),
+        created_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3),
+        INDEX idx_wchat_session (session_id, created_at),
+        INDEX idx_wchat_created (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 🌐 Website FAQs – the questions shown on padhyasoft.com pages and used by the website chatbot.
+    // page_key = home | about | services | contact | <service slug, e.g. trackandtracesystem>
+    const [faqTable] = await connection.query("SHOW TABLES LIKE 'website_faqs'");
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS website_faqs (
+        id VARCHAR(60) PRIMARY KEY,
+        page_key VARCHAR(80) NOT NULL,
+        question VARCHAR(500) NOT NULL,
+        answer TEXT NOT NULL,
+        sort_order INT NOT NULL DEFAULT 0,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        updated_by VARCHAR(150),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_wfaq_page (page_key, sort_order)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    // first time only (table did not exist before): copy the FAQs that are on the website today
+    if (!faqTable.length) {
+      const defaults = require("./websiteFaqDefaults.json");
+      const rows = [];
+      for (const group of [defaults.pages || {}, defaults.services || {}]) {
+        for (const [key, list] of Object.entries(group)) {
+          list.forEach(([q, a], i) => rows.push([`wfaq_${key}_${i + 1}_${Math.random().toString(36).substr(2, 5)}`, key, q, a, (i + 1) * 10, 1, "Website (initial import)"]));
+        }
+      }
+      if (rows.length) await connection.query("INSERT INTO website_faqs (id, page_key, question, answer, sort_order, is_active, updated_by) VALUES ?", [rows]);
+      console.log(`✅ website_faqs created with ${rows.length} FAQs from the website`);
+    }
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS website_unanswered_questions (
+        id VARCHAR(60) PRIMARY KEY,
+        question VARCHAR(500) NOT NULL,
+        normalized_question VARCHAR(500) NOT NULL,
+        page VARCHAR(255),
+        session_id VARCHAR(80),
+        ask_count INT NOT NULL DEFAULT 1,
+        status ENUM('pending', 'answered', 'ignored') NOT NULL DEFAULT 'pending',
+        answer TEXT,
+        faq_id VARCHAR(60),
+        answered_by VARCHAR(150),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_wuq_status (status, updated_at),
+        INDEX idx_wuq_norm (normalized_question(191))
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    const [wuqCols] = await connection.query("SHOW COLUMNS FROM website_unanswered_questions LIKE 'answer'");
+    if (!wuqCols.length) {
+      await connection.query("ALTER TABLE website_unanswered_questions ADD COLUMN answer TEXT NULL AFTER status");
+    }
+
+    // Sidebar Manager: order (1, 2, 3...), custom names and show/hide of the sidebar modules, one row per company
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS sidebar_settings (
+        company_id VARCHAR(100) PRIMARY KEY,
+        config JSON NOT NULL,
+        updated_by VARCHAR(150),
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     connection.release();
     console.log("✅ MySQL Tables ready in phpMyAdmin (taskflow_db)");
   } catch (err) {

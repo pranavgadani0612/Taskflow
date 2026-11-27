@@ -1,0 +1,352 @@
+{
+ "pages": {
+  "home": [
+   [
+    "What does Padhya Software Technologies do?",
+    "We are a software development company in Ahmedabad building custom software, ERP, CRM, web and mobile apps, e-commerce stores, Industry 4.0 automation, QR code systems and track and trace software – plus web design, graphic design, video editing and digital marketing."
+   ],
+   [
+    "Where are you located and which countries do you serve?",
+    "Our head office is in Ahmedabad, India, with an office in Albertslund, Denmark. We serve clients across India, the UAE and Middle East, Europe, the USA and Canada."
+   ],
+   [
+    "How do I get a cost estimate?",
+    "Book a free 20-minute consultation. You receive a customised cost estimate, timeline and proposal within 24 hours – no commitment required."
+   ],
+   [
+    "Which engagement models do you offer?",
+    "Fixed-price projects, monthly retainers and dedicated development teams."
+   ],
+   [
+    "Will I work directly with the people building my software?",
+    "Yes. Padhya is founder-led, so you work directly with the people who design and develop your software – no middlemen."
+   ],
+   [
+    "Do you provide support after launch?",
+    "Yes. Maintenance, updates and support are part of our long-term commitment."
+   ]
+  ],
+  "about": [
+   [
+    "What does founder-led mean for my project?",
+    "You work directly with the people who design and build your software, which means clear communication, faster decisions and solutions that match your business."
+   ],
+   [
+    "How long have you been building software?",
+    "More than 7 years, for 150+ clients worldwide, including 50+ enterprise projects across 5+ countries."
+   ],
+   [
+    "Which industries do you work with?",
+    "Manufacturing, jewellery, healthcare, fertilizer, agrochemical, retail, e-commerce, startups, SMEs and enterprise businesses."
+   ],
+   [
+    "How do you approach a new project?",
+    "Understand your business processes and goals, design a scalable architecture, develop secure software with modern technologies, and keep supporting it after launch."
+   ],
+   [
+    "Is pricing transparent?",
+    "Yes. Clear timelines, regular updates and honest pricing with no hidden costs."
+   ]
+  ],
+  "services": [
+   [
+    "I'm not sure which service I need – can you help?",
+    "Yes. Book a free consultation and tell us about your goal; we recommend the right mix of services and send an estimate within 24 hours."
+   ],
+   [
+    "Can one team handle several services together?",
+    "Yes. Software, apps, websites, automation, design, video and marketing are delivered by one accountable team."
+   ],
+   [
+    "Do you take custom requirements that aren't listed?",
+    "Yes. Every solution is custom-built, so tell us what you need even if it isn't on the list."
+   ],
+   [
+    "Which engagement model should I choose?",
+    "A fixed-price project suits a clear scope, a monthly retainer suits ongoing work, and a dedicated team suits long-term product development."
+   ]
+  ],
+  "contact": [
+   [
+    "How quickly will you reply?",
+    "We reply within 24 hours with a free consultation and a customised cost estimate."
+   ],
+   [
+    "What are your office hours?",
+    "Monday to Saturday, 10 AM – 7 PM IST. You can also message us on WhatsApp at +91 90165 75815."
+   ],
+   [
+    "How do I contact the Denmark office?",
+    "Email enquirydk@padhyasoft.com or call +45 71 83 47 30."
+   ],
+   [
+    "What should I include in my enquiry?",
+    "The service you need, your goals, budget, timeline and any documents or examples that help us understand the project."
+   ],
+   [
+    "Is my information kept confidential?",
+    "Yes. Your details are only used to respond to your enquiry."
+   ]
+  ]
+ },
+ "services": {
+  "trackandtracesystem": [
+   [
+    "What is a track and trace system?",
+    "It lets you see where every product, asset or shipment is and what has happened to it – from raw material through production, quality checks and dispatch – using QR, barcode, RFID, GPS and IoT scanning at each step."
+   ],
+   [
+    "Which technologies do you use for tracking?",
+    "Barcode and RFID scanning, QR codes, live GPS tracking for vehicles and goods, and IoT sensors that monitor temperature, humidity and handling conditions."
+   ],
+   [
+    "Can it work with our existing ERP or warehouse software?",
+    "Yes. Our track and trace solutions integrate seamlessly with existing systems, so production and shipment data flows into your ERP without re-typing."
+   ],
+   [
+    "Can our customers see shipment status?",
+    "Yes. Automated SMS, email or app notifications share shipment status, delivery confirmations and alerts for delays or route changes."
+   ],
+   [
+    "Does it help with quality and compliance?",
+    "Every checkpoint is recorded with digital signatures and audit trails, giving you end-to-end traceability and the reports you need for compliance."
+   ],
+   [
+    "Which industries use your track and trace software?",
+    "Manufacturing, logistics and supply chain, warehousing, fertilizer and agrochemical companies, pharmaceuticals, and retail and e-commerce."
+   ]
+  ],
+  "softwaredevelopment": [
+   [
+    "What kind of software do you build?",
+    "Custom business software, ERP and CRM systems, cloud software, web applications, mobile apps, enterprise solutions and software integrations – each designed around your business requirements."
+   ],
+   [
+    "Can you connect new software with our existing systems?",
+    "Yes. Our software integration services connect your existing systems with new technologies so data stays accurate and teams work faster."
+   ],
+   [
+    "Which technologies do you work with?",
+    "Python, Java, PHP and .NET; React, Angular and Vue.js on the front end; AWS, Google Cloud and Microsoft Azure in the cloud; and Swift, Kotlin, Flutter and React Native for mobile."
+   ],
+   [
+    "What does your development process look like?",
+    "Understanding your requirements, planning and strategy, design and development, rigorous testing, then deployment and ongoing support."
+   ],
+   [
+    "How much does custom software cost?",
+    "It depends on scope. We offer fixed-price projects, monthly retainers and dedicated development teams, and we send a customised estimate within 24 hours of a free consultation."
+   ],
+   [
+    "Do you support the software after launch?",
+    "Yes. Post-launch support and maintenance keep your software secure and up to date."
+   ]
+  ],
+  "mobileappdevelopment": [
+   [
+    "Do you build native or cross-platform apps?",
+    "Both. We build native iOS and Android apps, and cross-platform apps from one codebase with Flutter or React Native – we recommend the best fit for your budget and users."
+   ],
+   [
+    "Will you publish the app on the App Store and Google Play?",
+    "Yes. We assist with app store deployment and provide post-launch support and maintenance."
+   ],
+   [
+    "Which devices do you design for?",
+    "iPhone, iPad and Apple Watch on iOS, and phones and tablets on Android."
+   ],
+   [
+    "What kinds of apps have you built?",
+    "Customer and shopping apps, employee management and CRM apps, supply chain apps, booking and travel apps, learning apps and entertainment apps."
+   ],
+   [
+    "How do you make sure the app works well?",
+    "Our design team creates user-friendly interfaces, and rigorous quality assurance checks performance, stability and security before launch."
+   ],
+   [
+    "Do you maintain the app after it goes live?",
+    "Yes. We provide updates, security patches and platform upgrades so your app keeps running smoothly."
+   ]
+  ],
+  "qrcodesolution": [
+   [
+    "What is the difference between static and dynamic QR codes?",
+    "A static code always holds the same information. A dynamic code can be redirected and tracked after printing, with user analytics and expiry dates. We generate both."
+   ],
+   [
+    "Can you create QR codes in bulk from Excel?",
+    "Yes. Our Excel-to-QR service converts product inventories, employee IDs, coupons, tickets and invoices into thousands of unique codes in a few clicks."
+   ],
+   [
+    "Can the QR codes carry our logo and colours?",
+    "Yes. Custom QR codes can include your logo, brand colours and unique designs, and they stay high quality and scannable."
+   ],
+   [
+    "Can QR codes help us track products and stop counterfeits?",
+    "Yes. Trace-and-track QR codes record product movement across locations, and authentication and encryption help verify genuine products."
+   ],
+   [
+    "What can a QR code link to?",
+    "Website URLs, contact details (vCards), Wi-Fi access, product details and pricing, event registrations and more."
+   ]
+  ],
+  "industryautomationsolutions": [
+   [
+    "What does industrial automation include?",
+    "Robotic process automation (RPA), PLC and SCADA systems, industrial IoT integration and process control systems – from design to installation, training and support."
+   ],
+   [
+    "Do we have to replace our existing machines?",
+    "No. Our automation solutions integrate with your current machinery and software, so you move to automation without costly downtime."
+   ],
+   [
+    "Which industries do you automate?",
+    "Manufacturing and production, food and beverage, pharmaceuticals, automotive, and energy and utilities."
+   ],
+   [
+    "Is automation affordable for a growing company?",
+    "Yes. We build affordable, scalable systems that can be upgraded as your production needs grow."
+   ],
+   [
+    "Do you provide support after installation?",
+    "Yes. We offer 24/7 support and proactive maintenance to resolve issues before they cause downtime."
+   ]
+  ],
+  "webdevelopment": [
+   [
+    "What types of websites do you build?",
+    "Custom web applications, customer portals, CRM systems, e-commerce stores, CMS websites and company websites."
+   ],
+   [
+    "Can we update the website ourselves?",
+    "Yes. With WordPress, Joomla or Drupal you can manage and update content without technical knowledge."
+   ],
+   [
+    "Will the website work on mobile phones?",
+    "Yes. Every website we build is responsive and adapts to smartphones, tablets and desktops."
+   ],
+   [
+    "Is SEO included?",
+    "We follow SEO best practices during development, including on-page optimisation, so your site can rank on Google."
+   ],
+   [
+    "Can you redesign our existing website?",
+    "Yes. We modernise navigation, UI and UX to give your site a fresh, competitive look."
+   ],
+   [
+    "Do you maintain websites after launch?",
+    "Yes. We provide updates, security patches, bug fixes and performance optimisation."
+   ]
+  ],
+  "webdesign": [
+   [
+    "What is your web design process?",
+    "Discovery and planning, wireframing and prototyping, UI/UX design, development, testing and quality assurance, then launch and post-launch support."
+   ],
+   [
+    "Will the design work on every device?",
+    "Yes. Responsive design makes your site work flawlessly on desktops, tablets and smartphones."
+   ],
+   [
+    "Do you also develop the website after designing it?",
+    "Yes. Once you approve the design, our developers build it with fast, responsive and functional code."
+   ],
+   [
+    "Are your designs SEO-friendly?",
+    "Yes. We design with SEO best practices, fast loading speeds and clean code."
+   ],
+   [
+    "Can you design web applications as well as websites?",
+    "Yes – customer portals, internal applications and e-commerce platforms."
+   ]
+  ],
+  "graphicdesignservices": [
+   [
+    "Which graphic design services do you offer?",
+    "Logo design and brand identity, social media graphics, marketing and advertising design, website and UI graphics, and business and corporate design."
+   ],
+   [
+    "Are revisions included?",
+    "Yes. We offer fast delivery with revision support."
+   ],
+   [
+    "Are the designs ready for print and digital?",
+    "Yes. Every design is optimised for both digital and print."
+   ],
+   [
+    "How much does graphic design cost?",
+    "We offer affordable graphic design packages. Share your requirement and we will send a quote."
+   ],
+   [
+    "Can you design packaging and labels with QR codes?",
+    "Yes – our design team works with our QR code team for print-ready, QR-enabled labels and packaging."
+   ]
+  ],
+  "videoeditingservices": [
+   [
+    "What types of videos do you edit?",
+    "Corporate and promotional videos, social media videos, product and explainer videos, motion graphics and visual effects, plus colour correction and audio enhancement."
+   ],
+   [
+    "Which platforms do you edit for?",
+    "YouTube, Instagram, Facebook, LinkedIn, Reels and Shorts – each edit is optimised for its platform."
+   ],
+   [
+    "In what resolution do you deliver?",
+    "HD, Full HD and 4K."
+   ],
+   [
+    "How fast is the turnaround?",
+    "We offer fast turnaround times at affordable prices. Share your footage and deadline for an exact schedule."
+   ],
+   [
+    "Do we need to provide the footage?",
+    "Yes – we turn your raw footage into engaging, brand-consistent videos."
+   ]
+  ],
+  "digitalmarketing": [
+   [
+    "Which digital marketing services do you offer?",
+    "SEO, search engine marketing (Google Ads/PPC), social media marketing, content marketing, and analytics and reporting."
+   ],
+   [
+    "Do you work with businesses outside India?",
+    "Yes. We run campaigns for businesses in India and abroad."
+   ],
+   [
+    "How do we know the marketing is working?",
+    "We share clear reports on traffic, leads and return on spend."
+   ],
+   [
+    "How long does SEO take to show results?",
+    "SEO builds over time. We start with keyword research and on-page fixes, and share progress at every stage."
+   ],
+   [
+    "Can you manage our social media pages?",
+    "Yes – consistent, professional content and paid campaigns on LinkedIn, Instagram and Facebook."
+   ]
+  ],
+  "ecommercesystem": [
+   [
+    "Which e-commerce platforms do you use?",
+    "WooCommerce, Shopify and Magento, or a fully custom store built with React, Node.js, Laravel or .NET."
+   ],
+   [
+    "Are payments secure?",
+    "Yes. We integrate secure payment gateways and test security before launch."
+   ],
+   [
+    "Can the store manage inventory and orders?",
+    "Yes. Stores include inventory management and order tracking, and can connect to your ERP."
+   ],
+   [
+    "Will the store work on mobile phones?",
+    "Yes. Every store is mobile-responsive and optimised for conversions."
+   ],
+   [
+    "Do you support the store after launch?",
+    "Yes. We provide updates, security patches, bug fixes and performance optimisation."
+   ]
+  ]
+ }
+}

@@ -31,7 +31,9 @@ async function seedMySQLDefaults() {
     { id: "perm_payroll", name: "Payroll & Payslips", value: "payroll_management" },
     { id: "perm_resource", name: "Resource Utilization", value: "resource_management" },
     { id: "perm_client_reports", name: "Client Invoicing & Reports", value: "client_reports" },
-    { id: "perm_audit_logs", name: "Universal Audit Logs", value: "audit_logs" }
+    { id: "perm_audit_logs", name: "Universal Audit Logs", value: "audit_logs" },
+    { id: "perm_website_enquiries", name: "Website Enquiries", value: "website_enquiries" },
+    { id: "perm_sidebar_management", name: "Sidebar Manager", value: "sidebar_management" }
   ];
 
   for (const p of permissions) {
